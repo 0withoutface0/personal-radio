@@ -1,0 +1,107 @@
+import json
+import threading
+
+from .providers import ProviderUnavailable
+
+
+class Reporter:
+    def __init__(self, store, providers):
+        self.store = store
+        self.providers = providers
+        self.lock = threading.Lock()
+
+    def flush(self):
+        # Explicit dispatch only during the prototype. Pending work survives restarts.
+        with self.lock:
+            for row in self.store.submissions():
+                if row["state"] != "pending":
+                    continue
+                # Preflight failures have not sent any mutation and remain safely pending.
+                try:
+                    self.providers.yt()
+                    baseline = (
+                        [x.get("videoId") for x in self.providers.history()]
+                        if row["kind"] == "history"
+                        else None
+                    )
+                except Exception as error:
+                    detail = (
+                        str(error)
+                        if isinstance(error, ProviderUnavailable)
+                        else f"Account unavailable ({type(error).__name__})"
+                    )
+                    self.store.outcome(row["id"], "pending", detail)
+                    continue
+                if not self.store.claim(row["id"], baseline):
+                    continue
+                try:
+                    if row["kind"] == "history":
+                        status = self.providers.submit_history(row["video_id"])
+                        if status != 204:
+                            self.store.outcome(
+                                row["id"],
+                                "uncertain",
+                                f"History returned HTTP {status}; do not resend",
+                            )
+                            continue
+                    else:
+                        self.providers.rate(row["video_id"], row["value"])
+                    self.store.outcome(
+                        row["id"], "submitted", "Request returned; account check pending"
+                    )
+                except Exception as error:
+                    self.store.outcome(
+                        row["id"],
+                        "uncertain",
+                        f"Mutation outcome unknown ({type(error).__name__}); do not resend",
+                    )
+            self.reconcile()
+
+    def reconcile(self):
+        rows = [
+            row for row in self.store.submissions() if row["state"] in ("submitted", "uncertain")
+        ]
+        history = None
+        for row in rows:
+            try:
+                if row["kind"] == "history":
+                    if history is None:
+                        history = self.providers.history()
+                    visible = any(x.get("videoId") == row["video_id"] for x in history)
+                    if visible:
+                        # Visibility alone cannot identify one occurrence among repeats.
+                        self.store.outcome(
+                            row["id"],
+                            "visible",
+                            "Song visible in account history; occurrence attribution unverified",
+                        )
+                        baseline = json.loads(row["baseline"] or "null")
+                        verified_new = (
+                            baseline is not None
+                            and row["video_id"] not in baseline
+                            and row["state"] == "submitted"
+                        )
+                        self.store.evidence(
+                            "history_visibility",
+                            "passed" if verified_new else "uncertain",
+                            {
+                                "video_id": row["video_id"],
+                                "submission_id": row["id"],
+                                "new_since_preflight": verified_new,
+                                "recap": "unverified",
+                            },
+                        )
+                elif self.providers.check_rating(row["video_id"], row["value"]):
+                    self.store.outcome(row["id"], "visible", "Like visible on account")
+                else:
+                    self.store.outcome(
+                        row["id"],
+                        row["state"],
+                        "Rating visibility unverified; check YouTube Music directly",
+                    )
+            except Exception as error:
+                self.store.outcome(
+                    row["id"],
+                    row["state"],
+                    f"Account check unavailable ({type(error).__name__}); no resubmission",
+                )

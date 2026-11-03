@@ -1,0 +1,53 @@
+# Server interfaces
+
+Base origin: `http://127.0.0.1:8765`. All `/api` endpoints require `Authorization: Bearer DEVICE_TOKEN`. Read the token locally from `data/device-token.txt`; provider cookies and Tidal tokens are never client credentials. The local diagnostic page has a separate HttpOnly cookie session with same-origin mutation protection.
+
+The complete schemas are generated at authenticated `GET /api/openapi.json`. A credential-free snapshot is included in [openapi.json](openapi.json).
+
+| Interface | Purpose |
+| --- | --- |
+| `GET /api/accounts` | Presence of credential files; not proof of current subscription or streaming access |
+| `GET /api/search?q=…` | Signed-in YouTube song search |
+| `GET /api/stations` | Personalized RD playlists discovered on the signed-in home page |
+| `POST /api/radio` | `{video_id}` or `{playlist_id}`, optional `limit`; returns ordered recommendations and station context |
+| `POST /api/autoplay` | `{video_id, limit?}` starts normal-play Autoplay; `{cursor}` continues a saved queue |
+| `POST /api/match` | YouTube recording metadata → confident Tidal recording or visible skipped reason/candidates |
+| `PUT /api/corrections` | `{video_id, tidal_id}` saves a deliberate manual mapping |
+| `POST /api/streams` | `{tidal_id}` → ephemeral stream UUID, local URL, and provider source metadata |
+| `GET /api/streams/{uuid}/manifest.m3u8` | Proxy manifest with local relative segment URLs |
+| `GET, HEAD /api/streams/{uuid}/assets/{index}.flac` | Direct FLAC asset; single byte Range supported |
+| `GET, HEAD /api/streams/{uuid}/assets/{index}.m4s` | Initialization or audio segment for HLS |
+| `POST /api/occurrences` | `{tidal_id, video_id?}` → new occurrence UUID; ID pairing is explicit prototype input |
+| `GET /api/occurrences/{uuid}` | Durable local totals for resume/reconciliation |
+| `POST /api/events` | `{id, occurrence_id, seconds, completed}`; unique event UUID, 0–5-second actual playback interval |
+| `POST /api/ratings` | `{occurrence_id, value}`; `LIKE`, `DISLIKE`, or `INDIFFERENT` |
+| `POST /api/reporting/flush` | Dispatch safely pending work, then read account state; uncertain mutations are never resent |
+| `POST /api/reporting/reconcile` | Read account state without provider mutations |
+| `POST /api/checks/decode` | `{tidal_id, expect_hires}`; starts one full-source decoder job, returns HTTP 202 and job UUID |
+| `GET /api/checks/{uuid}` | In-memory decoder job status; durable results are also in the report |
+| `POST /api/checks/playback` | mpv harness results linked to a prior successful decode and durable occurrence totals |
+| `GET /api/report` | Evidence, integration gate, listening totals, top songs, and reporting states |
+
+`POST /setup/youtube` accepts `{text: browser_headers}`; `POST /setup/tidal/start` begins local PKCE; `POST /setup/tidal/finish` accepts `{text: redirect_url}`. All setup endpoints are disabled with `RADIO_LOCAL_SETUP=0`.
+
+Autoplay is distinct from explicit Start radio. Its first provider request omits `playlistId` and radio params, then follows the returned Automix endpoint. The first page includes the selected song. Responses contain `mode: "autoplay"`, `session_id`, `seed_video_id`, `playlist_id`, `tracks`, `has_more`, and `next_cursor`. Page size is fixed by the initial `limit` (default 25, range 1–100); omit `limit` on cursor requests. Exactly one of `video_id` and `cursor` is required.
+
+Autoplay cursors are opaque server-generated UUIDs, not YouTube tokens. Provider params, continuations, buffered tracks, and cached page results stay in SQLite. Cursor retries return the identical response, including its next cursor. Start a new session only when the user deliberately selects another song or mode. After a server restart, a saved cursor resumes the same provider context; an expired upstream continuation fails visibly instead of resetting the radio. Metadata requests create no playback occurrences or listening events.
+
+Playback events are intervals of measured audio time rather than wall-clock gaps between heartbeats. They must omit pauses, buffering, seek discontinuities, and application downtime. The client must persist a UUID and payload before sending, retain both until acknowledgement, and reuse both exactly on retry. Reusing an event UUID with a changed payload is an error.
+
+A history submission is unique per occurrence, not per YouTube video. Distinct later occurrences may report the same video again. Event insertion, cumulative time, and history scheduling share one SQLite transaction. Source decoding produces no listening events.
+
+Submission states: `pending`, `sending`, `submitted`, `visible`, `uncertain`. Startup recovery turns interrupted `sending` rows into `uncertain`. A `visible` result for a previously present history item does not independently pass the integration gate. The report retains that distinction. Responses never contain upstream signed media URLs or provider authentication data.
+
+The Flutter clients use `POST /api/queues` for all three modes. Start with `{mode: "autoplay", video_id, limit?}`, `{mode: "radio", video_id, limit?}`, or `{mode: "station", playlist_id, limit?}`. Station IDs must come from the signed-in account. Continue any mode with `{cursor}` only. All responses preserve mode, session ID and provider order; the initial page size remains fixed. Cursor retries return the same page across restarts.
+
+`POST /api/occurrences` additionally accepts a client-generated `id` UUID. Repeating it with the same YouTube/Tidal pair returns the same occurrence; changing the pair is rejected. The app persists this UUID before opening audio. `POST /api/ratings` additionally accepts an `id` UUID for an explicit action. Reuse it on retries; use a new ID for a deliberate change of rating.
+
+`POST /api/device/lease` takes `{device_id, force?: false, release?: false}`. An active lease lasts 25 seconds; players renew every six seconds while playing/buffering. Stream creation checks `X-Device-ID` against the active lease and returns 409 if another device owns it. A forced takeover causes the previous client to pause at its next heartbeat. Asset requests still require the bearer token. The clients persist real listening events even if a newer device has taken over.
+
+`GET /api/streams/{uuid}/quality` inspects the proxied source using ffprobe and returns `verified`, `codec`, `bit_depth`, `sample_rate`, and `source_quality`. A failed probe returns `verified: false`; clients must not display provider resolution as measured resolution. The probe does not decode or transcode audio for playback. Set `RADIO_INTERNAL_ORIGIN` when the internal API origin differs from loopback port 8765.
+
+`POST /api/reporting/dispatch` schedules a serialized background flush and returns 202 immediately. It never retries ambiguous provider mutations. `GET /api/report` also includes `top_artists` (grouped by stored artist credit) alongside durable totals and top songs.
+
+Outside loopback, disable local account setup with `RADIO_LOCAL_SETUP=0`, whitelist the service hostname/IP with `RADIO_ALLOWED_HOSTS`, and expose the private listener through Tailscale. The Windows CLI `serve --host 100.x.x.x` performs those binding/setup restrictions for the PC's Tailscale address. Provider credentials and opaque provider continuation parameters remain server-side.

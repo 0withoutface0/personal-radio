@@ -1,0 +1,32 @@
+name: personal_radio
+description: "Personal lossless radio for Windows and Android."
+publish_to: 'none'
+version: 0.1.1+2
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+  media_kit: ^1.2.6
+  # Full libmpv includes the HLS demuxer needed for untouched fragmented FLAC.
+  media_kit_libs_video: ^1.0.7
+  audio_service: ^0.18.19
+  audio_session: ^0.2.4
+  flutter_secure_storage: ^11.2.0
+  path_provider: ^2.1.6
+  http: ^1.6.0
+  uuid: ^4.6.0
+
+dev_dependencies:
+  integration_test:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - native-notices/

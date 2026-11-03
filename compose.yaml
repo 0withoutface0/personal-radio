@@ -1,0 +1,28 @@
+services:
+  radio:
+    build: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      RADIO_DATA_DIR: /data
+      RADIO_LOCAL_SETUP: "0"
+      RADIO_ALLOWED_HOSTS: ${RADIO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+    volumes:
+      - radio-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-m", "radio_prototype", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  radio-data:

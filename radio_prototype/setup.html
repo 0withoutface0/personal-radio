@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lossless Radio · Integration check</title>
+<style>
+  :root{color-scheme:dark;font:16px/1.6 system-ui,sans-serif;background:#101419;color:#dbe5ec}
+  body{max-width:850px;margin:48px auto;padding:0 24px}h1{font-size:38px;line-height:1.2;color:white}
+  h2{font-size:21px;margin:0 0 14px}section{background:#192129;border:1px solid #2b3945;border-radius:14px;padding:24px;margin:20px 0}
+  .tag{color:#7bdac7;text-transform:uppercase;letter-spacing:.16em;font-size:12px}p{color:#a9b9c7}
+  button{background:#7bdac7;color:#0b2823;border:0;border-radius:7px;padding:11px 17px;font:600 14px system-ui;cursor:pointer;margin:8px 8px 8px 0}
+  button:disabled{opacity:.5;cursor:wait}input,textarea,select{box-sizing:border-box;width:100%;background:#10171d;border:1px solid #415362;border-radius:7px;color:white;font:14px/1.5 monospace;padding:10px;margin:7px 0}textarea{height:120px}
+  a{color:#7bdac7}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#b6c6d1;max-height:420px;overflow:auto}label{display:block;margin-top:8px}.result{min-height:24px;color:#7bdac7}small{color:#9aaab8}
+</style>
+<div class="tag">Personal radio / prototype</div><h1>Verify the music.<br>Then build the player.</h1>
+<p>This local tool checks your accounts and full-length FLAC access. The Windows and Android Flutter application is gated on successful integration checks. Recap inclusion remains unverified.</p>
+<section><h2>1. Connect YouTube Music</h2>
+<p>In your signed-in YouTube Music tab, copy the request headers from a successful <code>/browse</code> POST request using the Network panel in developer tools. See the <a href="https://ytmusicapi.readthedocs.io/en/stable/setup/browser.html" target="_blank" rel="noreferrer">ytmusicapi instructions</a>.</p>
+<label for="youtube">Browser request headers — saved only on this computer</label><textarea id="youtube" autocomplete="off" spellcheck="false" placeholder="Paste request headers here, never in chat"></textarea>
+<button id="youtubeConnect">Connect YouTube</button><div id="youtubeResult" class="result" aria-live="polite"></div>
+</section>
+<section><h2>2. Connect Tidal with PKCE</h2><p>Sign in with your subscribed Tidal account. After login, copy the entire final redirect URL from the “Oops” page and paste it below.</p>
+<button id="tidalStart">Start Tidal sign-in</button><div id="tidalLink"></div>
+<label for="redirect">Final redirect URL</label><input id="redirect" type="password" autocomplete="off"><button id="tidalFinish">Complete sign-in</button><div id="tidalResult" class="result" aria-live="polite"></div>
+</section>
+<section><h2>3. Check recommendations</h2><label for="search">Find a song on YouTube Music</label><input id="search" placeholder="Artist and song title"><button id="searchButton">Search</button>
+<select id="songs" aria-label="Search results"></select><button id="autoplayButton">Check Autoplay</button><button id="radioButton">Start radio / mix</button><button id="matchButton">Find the Tidal recording</button><pre id="searchResult"></pre>
+<p>Autoplay starts with the selected song and adds YouTube's automatic suggestions. Start radio creates a mix immediately. Load more continues the same Autoplay queue.</p>
+<button id="stationButton">Discover my stations</button><select id="stations" aria-label="Personalized stations"></select><button id="mixButton">Check selected mix</button><pre id="stationsResult"></pre>
+<div id="queueMode" class="result" aria-live="polite"></div><button id="moreAutoplayButton" hidden>Load more Autoplay tracks</button><pre id="radioResult" aria-live="polite"></pre></section>
+<section><h2>4. Verify full-length source audio</h2><p>Enter a Tidal recording ID. Run one standard lossless test and one Hi-Res test. The source is read through the authenticated proxy and fully decoded to a null sink. No audio file is retained, and decoder checks never submit listening activity.</p>
+<label for="track">Tidal track ID</label><input id="track" inputmode="numeric" placeholder="Use a confident match from step 3"><select id="quality" aria-label="Verification case"><option value="standard">Standard lossless (16-bit, up to 48 kHz)</option><option value="hires">Hi-Res (over 16-bit or 48 kHz)</option></select>
+<button id="decodeButton">Check the full source</button><pre id="decodeResult" aria-live="polite"></pre>
+<p>Audible playback and accurately measured history submission are checked separately with the <code>listen</code> command in the README. Full-source decoding alone does not pass the playback gate.</p></section>
+<section><h2>Evidence and reporting</h2><button id="refresh">Refresh report</button><button id="reconcile">Recheck YouTube visibility</button><pre id="report" aria-live="polite"></pre></section>
+<small>Local setup only · Credentials stay on the host · Every check remains unverified until it runs against your accounts</small>
+<script>
+let songs = [], stations = [];
+let autoplayQueue = null, queueBusy = false;
+const el = id => document.getElementById(id);
+const show = (id, value) => el(id).textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+async function api(path, body, method='POST') {
+  const response = await fetch(path, {method, headers:{'Content-Type':'application/json'}, ...(body === undefined ? {} : {body:JSON.stringify(body)})});
+  const data = await response.json(); if (!response.ok) throw new Error(data.detail || 'Request failed'); return data;
+}
+function action(button, output, callback) {
+ el(button).onclick = async () => {el(button).disabled = true; show(output, 'Working…'); try {await callback();} catch(e) {show(output,e.message);} finally {el(button).disabled=false;}};
+}
+function options(id, items, label) {el(id).replaceChildren(...items.map((item,index)=>{const option=document.createElement('option');option.value=index;option.textContent=label(item);return option;}));}
+function rememberAutoplay() {
+  try {if(autoplayQueue)sessionStorage.setItem('radioAutoplayQueue.v1',JSON.stringify(autoplayQueue));else sessionStorage.removeItem('radioAutoplayQueue.v1');}catch{}
+}
+function showAutoplay() {
+  show('queueMode','Autoplay · '+autoplayQueue.tracks.length+' tracks loaded'+(autoplayQueue.has_more?'':' · End of queue'));
+  show('radioResult',autoplayQueue);el('moreAutoplayButton').hidden=!autoplayQueue.next_cursor;
+}
+function clearAutoplay() {autoplayQueue=null;rememberAutoplay();el('moreAutoplayButton').hidden=true;}
+function queueAction(button, callback) {
+ el(button).onclick=async()=>{
+  if(queueBusy)return;queueBusy=true;
+  const buttons=['autoplayButton','radioButton','mixButton','moreAutoplayButton'];
+  buttons.forEach(id=>el(id).disabled=true);show('radioResult','Working…');
+  try{await callback();}catch(e){show('radioResult',e.message);}
+  finally{queueBusy=false;buttons.forEach(id=>el(id).disabled=false);}
+ };
+}
+action('youtubeConnect','youtubeResult',async()=>{await api('/setup/youtube',{text:el('youtube').value});el('youtube').value='';show('youtubeResult','YouTube account connected.');});
+action('tidalStart','tidalResult',async()=>{const data=await api('/setup/tidal/start');const link=document.createElement('a');link.href=data.login_url;link.target='_blank';link.rel='noreferrer';link.textContent='Open Tidal sign-in';el('tidalLink').replaceChildren(link);show('tidalResult','Open the sign-in link, then paste the final redirect URL.');});
+action('tidalFinish','tidalResult',async()=>{await api('/setup/tidal/finish',{text:el('redirect').value});el('redirect').value='';el('tidalLink').replaceChildren();show('tidalResult','Subscribed PKCE account connected.');});
+action('searchButton','searchResult',async()=>{songs=await api('/api/search?q='+encodeURIComponent(el('search').value),undefined,'GET');options('songs',songs,x=>x.title+' · '+x.artists.join(', '));show('searchResult',songs);});
+queueAction('autoplayButton',async()=>{const song=songs[el('songs').value];if(!song)throw new Error('Search and select a song first');const batch=await api('/api/autoplay',{video_id:song.video_id});autoplayQueue=batch;rememberAutoplay();showAutoplay();});
+queueAction('moreAutoplayButton',async()=>{if(!autoplayQueue?.next_cursor)throw new Error('Start Autoplay first');const batch=await api('/api/autoplay',{cursor:autoplayQueue.next_cursor});autoplayQueue={...batch,tracks:[...autoplayQueue.tracks,...batch.tracks]};rememberAutoplay();showAutoplay();});
+queueAction('radioButton',async()=>{const song=songs[el('songs').value];if(!song)throw new Error('Search and select a song first');const batch=await api('/api/radio',{video_id:song.video_id});clearAutoplay();show('queueMode','Start radio / mix');show('radioResult',batch);});
+action('matchButton','searchResult',async()=>{const song=songs[el('songs').value];if(!song)throw new Error('Select a song first');const match=await api('/api/match',song);show('searchResult',match);if(match.status==='matched')el('track').value=match.track.id;});
+action('stationButton','stationsResult',async()=>{stations=await api('/api/stations',undefined,'GET');options('stations',stations,x=>x.title+' · '+x.section);show('stationsResult',stations.length?stations:'No personalized RD stations were discovered on this account home page.');});
+queueAction('mixButton',async()=>{const station=stations[el('stations').value];if(!station)throw new Error('Discover and select a station first');const batch=await api('/api/radio',{playlist_id:station.id});clearAutoplay();show('queueMode','Personalized station · '+station.title);show('radioResult',batch);});
+action('decodeButton','decodeResult',async()=>{const job=await api('/api/checks/decode',{tidal_id:Number(el('track').value),expect_hires:el('quality').value==='hires'});let result=job;while(result.status==='running'){show('decodeResult',result);await new Promise(resolve=>setTimeout(resolve,2000));result=await api('/api/checks/'+job.id,undefined,'GET');}show('decodeResult',result);await refresh();});
+async function refresh(){show('report',await api('/api/report',undefined,'GET'));}
+action('refresh','report',refresh);action('reconcile','report',async()=>{await api('/api/reporting/reconcile',{});await refresh();});
+try{const saved=JSON.parse(sessionStorage.getItem('radioAutoplayQueue.v1'));if(saved?.mode==='autoplay'&&Array.isArray(saved.tracks)){autoplayQueue=saved;showAutoplay();}}catch{}
+refresh().catch(e=>show('report',e.message));
+</script></html>
