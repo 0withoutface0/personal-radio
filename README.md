@@ -10,6 +10,7 @@ Use your own YouTube Music and Tidal subscriptions. Provider credentials stay on
 - **Start radio:** explicitly start a song's radio mix, or choose a personalized station from your signed-in account.
 - Preserve recommendation order and station context, prefetch tracks, and replenish saved queues across provider batches.
 - Match recordings conservatively by identifiers and metadata, including duration, recording version and explicit status. Uncertain matches are skipped visibly; manual corrections are saved.
+- Resolve music videos through YouTube's audio counterpart when supplied, or matching official-song metadata, so video introductions do not cause false duration mismatches. Review ambiguous Tidal candidates and retry skipped matches directly in the queue.
 - Request Hi-Res lossless first, with standard lossless as the fallback. Proxy the original FLAC audio without lossy conversion, and display measured source quality when verification succeeds.
 - Play, pause, seek, skip, like and dislike. Android includes background playback and media controls through `audio_service`.
 - Measure actual listening time and keep durable local totals, top songs and artist statistics. Eligible plays and explicit ratings are sent to YouTube on a best-effort basis, with uncertain results shown separately.

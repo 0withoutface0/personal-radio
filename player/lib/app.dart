@@ -495,6 +495,17 @@ class _RadioHomeState extends State<RadioHome> {
         'Coming up',
         r.queueTitle,
       ),
+      if (r.entries.any((entry) => entry.status == 'skipped'))
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: OutlinedButton.icon(
+            onPressed: r.retryingMatches ? null : r.retrySkippedMatches,
+            icon: const Icon(Icons.refresh, size: 18),
+            label: Text(
+              r.retryingMatches ? 'Checking matches…' : 'Retry skipped matches',
+            ),
+          ),
+        ),
       Expanded(
         child: r.entries.isEmpty
             ? const Center(
@@ -532,9 +543,9 @@ class _RadioHomeState extends State<RadioHome> {
                       ),
                       subtitle: Text(
                         skipped
-                            ? 'Skipped · ${entry.reason}'
+                            ? '${entry.song.artist} · Skipped\n${entry.reason}'
                             : '${entry.song.artist}${entry.tidal != null ? ' · Matched' : ''}',
-                        maxLines: 2,
+                        maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white54,
@@ -945,12 +956,62 @@ class _RadioHomeState extends State<RadioHome> {
       context: context,
       builder: (c) => AlertDialog(
         title: const Text('Choose the correct recording'),
-        content: TextField(
-          controller: text,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Tidal track ID',
-            helperText: 'Save this mapping for future occurrences.',
+        scrollable: true,
+        content: SizedBox(
+          width: 480,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (entry.candidates.isNotEmpty) ...[
+                const Text(
+                  'Review these Tidal results. Choosing one saves your correction.',
+                ),
+                const SizedBox(height: 12),
+                for (final candidate in entry.candidates)
+                  Builder(
+                    builder: (context) {
+                      final track = Map<String, dynamic>.from(
+                        candidate['track'],
+                      );
+                      final length = Duration(
+                        seconds: (track['duration'] as num? ?? 0).round(),
+                      );
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(track['title'] ?? 'Unknown recording'),
+                        subtitle: Text(
+                          [
+                            (track['artists'] as List? ?? []).join(', '),
+                            '${track['album'] ?? 'Unknown album'} · ${timeLabel(length)}'
+                                '${track['explicit'] == true
+                                    ? ' · Explicit'
+                                    : track['explicit'] == false
+                                    ? ' · Not explicit'
+                                    : ''}',
+                            if (candidate['rejection'] != null)
+                              candidate['rejection'].toString(),
+                          ].join('\n'),
+                        ),
+                        trailing: IconButton(
+                          tooltip: 'Use this recording',
+                          icon: const Icon(Icons.check_circle_outline),
+                          onPressed: () => Navigator.pop(c, track['id'] as int),
+                        ),
+                      );
+                    },
+                  ),
+                const Divider(),
+              ],
+              TextField(
+                controller: text,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Or enter a Tidal track ID',
+                  helperText: 'Save this mapping for future occurrences.',
+                ),
+              ),
+            ],
           ),
         ),
         actions: [

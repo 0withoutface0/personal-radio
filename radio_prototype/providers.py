@@ -12,6 +12,7 @@ from ytmusicapi.exceptions import YTMusicServerError
 from ytmusicapi.models.content.enums import LikeStatus
 
 from .config import private_write
+from .matching import audio_reference, match_recording, title_key
 
 
 class ProviderUnavailable(RuntimeError):
@@ -32,8 +33,8 @@ def duration_seconds(value):
         return None
 
 
-def youtube_track(item):
-    return {
+def youtube_track(item, *, include_counterpart=True):
+    track = {
         "video_id": item.get("videoId"),
         "title": item.get("title", ""),
         "artists": [x["name"] for x in item.get("artists", []) if x.get("name")],
@@ -43,6 +44,7 @@ def youtube_track(item):
         ),
         "explicit": item.get("isExplicit"),
         "isrc": item.get("isrc"),
+        "video_type": item.get("videoType"),
         "artwork": next(
             (
                 x["url"]
@@ -52,6 +54,10 @@ def youtube_track(item):
             None,
         ),
     }
+    counterpart = item.get("counterpart")
+    if include_counterpart and isinstance(counterpart, dict) and counterpart.get("videoId"):
+        track["counterpart"] = youtube_track(counterpart, include_counterpart=False)
+    return track
 
 
 def tidal_track(track):
@@ -210,11 +216,100 @@ class Providers:
                         return [tidal_track(t) for t in matches]
                 except (tidalapi.exceptions.ObjectNotFound, tidalapi.exceptions.InvalidISRC):
                     pass
-            query = " ".join([source["title"], *source.get("artists", [])])
-            return [
-                tidal_track(t)
-                for t in session.search(query, models=[tidalapi.Track], limit=25).get("tracks", [])
-            ]
+            # Quoted title + principal artist prevents popular unrelated tracks crowding
+            # the intended song out of Tidal's first result page. Try artist-first too.
+            title = title_key(source["title"])
+            artist = next(iter(source.get("artists", [])), "").replace('"', " ")
+            queries = [f'"{title}" "{artist}"', f"{artist} {title}"]
+            if source.get("album"):
+                queries.append(f"{artist} {title} {source['album']}")
+            found = {}
+            for query in dict.fromkeys(queries):
+                for track in session.search(query, models=[tidalapi.Track], limit=50).get(
+                    "tracks", []
+                ):
+                    found[int(track.id)] = tidal_track(track)
+                if match_recording(source, list(found.values()))["status"] == "matched":
+                    break
+            return list(found.values())
+
+    @staticmethod
+    def _audio_source(source, reference):
+        reference = deepcopy(reference)
+        # Enrichment must never discard constraints already known for this occurrence.
+        for key in ("explicit", "isrc"):
+            if source.get(key) is not None:
+                reference[key] = source[key]
+        return reference
+
+    def match(self, original):
+        """Keep recommendation identity; resolve a video's audio metadata for matching."""
+        with self.lock:
+            source = deepcopy(original)
+            # Older saved queues discarded video type and counterpart. Recover only the
+            # requested seed's metadata; never replace the station or recommendation queue.
+            if not source.get("video_type") and not source.get("album"):
+                tracks = (
+                    self.yt()
+                    .get_watch_playlist(videoId=source["video_id"], limit=1)
+                    .get("tracks", [])
+                )
+                seed = next((t for t in tracks if t.get("videoId") == source["video_id"]), None)
+                if seed:
+                    fresh = youtube_track(seed)
+                    for key in ("video_type", "counterpart"):
+                        if fresh.get(key):
+                            source[key] = fresh[key]
+            counterpart = source.get("counterpart")
+            if source.get("video_type") == "MUSIC_VIDEO_TYPE_OMV" and counterpart:
+                if audio_reference(source, counterpart, linked=True):
+                    counterpart = self._audio_source(source, counterpart)
+                    result = match_recording(counterpart, self.candidates(counterpart))
+                    result.update(method="youtube_counterpart", audio_source=counterpart)
+                    return result
+
+            candidates = self.candidates(source)
+            result = match_recording(source, candidates)
+            if source.get("video_type") != "MUSIC_VIDEO_TYPE_OMV":
+                return result
+
+            # The API does not always include the UI's song/video link. Search official
+            # songs, requiring exact normalized identity and bounded video-only runtime.
+            artist = next(iter(source.get("artists", [])), "")
+            queries = [f"{artist} {title_key(source['title'])}"]
+            for candidate in candidates:
+                if audio_reference(source, candidate) and title_key(candidate["title"]):
+                    query = f"{artist} {candidate['title']}"
+                    if query not in queries:
+                        queries.append(query)
+            references = {}
+            outcomes = []
+            for query in queries[:2]:
+                for item in self.yt().search(query, filter="songs", limit=20):
+                    reference = youtube_track(item)
+                    if reference["video_id"] in references or not audio_reference(
+                        source, reference
+                    ):
+                        continue
+                    references[reference["video_id"]] = reference
+                    reference = self._audio_source(source, reference)
+                    pool = {t["id"]: t for t in candidates}
+                    pool.update({t["id"]: t for t in self.candidates(reference)})
+                    resolved = match_recording(reference, list(pool.values()))
+                    resolved.update(method="youtube_song_metadata", audio_source=reference)
+                    outcomes.append(resolved)
+                if any(o["status"] == "matched" for o in outcomes):
+                    break
+            matched = [o for o in outcomes if o["status"] == "matched"]
+            identities = {o["track"].get("isrc") or str(o["track"]["id"]) for o in matched}
+            if len(identities) == 1:
+                return max(matched, key=lambda o: o["score"])
+            if len(identities) > 1:
+                result["status"] = "skipped"
+                result["reason"] = "Ambiguous audio recordings; choose a recording correction"
+            elif outcomes:
+                return outcomes[0]
+            return result
 
     def track(self, track_id):
         with self.lock:

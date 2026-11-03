@@ -36,6 +36,7 @@ class RadioController extends ChangeNotifier {
   String mode = 'autoplay', queueTitle = 'Your next discovery';
   String? error, connectionMessage;
   bool connected = false,
+      retryingMatches = false,
       busy = false,
       playing = false,
       buffering = false,
@@ -401,12 +402,16 @@ class RadioController extends ChangeNotifier {
     update();
   }
 
-  Future<bool> prepare(QueueEntry entry) async {
+  Future<bool> prepare(QueueEntry entry, {bool retry = false}) async {
     if (entry.tidal != null) return true;
-    if (entry.status == 'skipped') return false;
+    if (entry.status == 'skipped' && !retry) return false;
     final data = Map<String, dynamic>.from(
       await api!.call('/api/match', body: entry.song.source),
     );
+    entry.candidates = (data['candidates'] as List? ?? [])
+        .take(8)
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
     if (data['status'] != 'matched') {
       entry.status = 'skipped';
       entry.reason = data['reason'] ?? 'No confident recording match';
@@ -420,6 +425,28 @@ class RadioController extends ChangeNotifier {
     await persist();
     update();
     return true;
+  }
+
+  Future<void> retrySkippedMatches() async {
+    if (!ready || retryingMatches) return;
+    retryingMatches = true;
+    error = null;
+    update();
+    final generation = _generation;
+    final skipped = entries
+        .where((entry) => entry.status == 'skipped')
+        .toList();
+    try {
+      for (final entry in skipped) {
+        if (generation != _generation) break;
+        await prepare(entry, retry: true);
+      }
+    } catch (e) {
+      fail(e);
+    } finally {
+      retryingMatches = false;
+      update();
+    }
   }
 
   Future<void> prefetch() async {
@@ -497,7 +524,13 @@ class RadioController extends ChangeNotifier {
     _opening = true;
     quality = null;
     _clock = ListeningClock();
-    duration = entry.song.duration;
+    duration = Duration(
+      milliseconds:
+          ((entry.tidal?['duration'] as num? ??
+                      entry.song.duration.inMilliseconds / 1000) *
+                  1000)
+              .round(),
+    );
     try {
       await acquire();
       await api!.call(

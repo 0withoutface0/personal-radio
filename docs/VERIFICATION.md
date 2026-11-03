@@ -1,8 +1,8 @@
 # Verification status
 
-Version 0.1.1 is an early release. The Windows executable, signed Android APK and Linux Docker image have been built. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
+Version 0.1.2 is an early release. The Windows executable, signed Android APK and Linux Docker image have been built. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
 
-Automated checks: **81 Python tests**, **14 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
+Automated checks: **102 Python tests**, **18 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
 
 | Check | Evidence / status |
 | --- | --- |
@@ -10,6 +10,7 @@ Automated checks: **81 Python tests**, **14 Flutter unit/widget tests**, clean R
 | Authenticated explicit radio | Three saved pages; mode and session preserved |
 | Personalized stations | Discovered from the signed-in account; station pagination checked |
 | Recording matching | Studio/live/remix/explicit/conflict fixtures pass; live catalog matching checked |
+| Music-video matching | Linked audio counterparts preserved; official-song metadata resolves video-runtime differences; live checks recovered seven previously skipped recordings and retained one ambiguous result for manual choice |
 | Full standard FLAC source | 16-bit / 44.1 kHz full decode and native Windows playback verified |
 | Full Hi-Res FLAC source | Full 24-bit / 44.1 kHz source decoded; device playback is a separate check |
 | Server lossy conversion | None; original FLAC assets and manifest proxy |

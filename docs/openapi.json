@@ -1258,6 +1258,95 @@
         ],
         "title": "RatingInput"
       },
+      "RecordingInput": {
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Video Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "artists": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Artists"
+          },
+          "album": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          },
+          "explicit": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explicit"
+          },
+          "isrc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isrc"
+          },
+          "video_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "video_id",
+          "title",
+          "artists"
+        ],
+        "title": "RecordingInput"
+      },
       "SourceInput": {
         "properties": {
           "video_id": {
@@ -1325,6 +1414,28 @@
               }
             ],
             "title": "Isrc"
+          },
+          "video_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Type"
+          },
+          "counterpart": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecordingInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

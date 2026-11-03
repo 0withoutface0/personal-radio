@@ -125,6 +125,54 @@ def test_client_occurrence_ids_survive_retries_and_restart(api):
     )
 
 
+def test_match_accepts_counterpart_without_creating_listening_activity(tmp_path):
+    settings = Settings(tmp_path)
+    observed = []
+
+    def match(source):
+        observed.append(source)
+        return {"status": "matched", "method": "youtube_counterpart", "track": {"id": 123}}
+
+    app = create_app(settings, SimpleNamespace(match=match))
+    auth = {"Authorization": "Bearer " + settings.device_token()}
+    source = {
+        "video_id": "original-video",
+        "title": "Song (Official Video)",
+        "artists": ["Artist"],
+        "duration": 302,
+        "video_type": "MUSIC_VIDEO_TYPE_OMV",
+        "counterpart": {
+            "video_id": "audio",
+            "title": "Song",
+            "artists": ["Artist"],
+            "album": "Single",
+            "duration": 275,
+            "video_type": "MUSIC_VIDEO_TYPE_ATV",
+        },
+    }
+    with TestClient(app, base_url="http://localhost") as client:
+        response = client.post("/api/match", headers=auth, json=source)
+    assert response.status_code == 200
+    assert observed[0]["video_id"] == "original-video"
+    assert observed[0]["counterpart"]["video_id"] == "audio"
+    assert observed[0]["counterpart"]["duration"] == 275
+    assert app.state.store.report()["totals"]["occurrences"] == 0
+    assert app.state.store.submissions() == []
+
+
+def test_manual_correction_takes_priority_over_audio_resolution(api):
+    client, app, auth = api
+    app.state.store.correction("video", 123)
+    response = client.post(
+        "/api/match",
+        headers=auth,
+        json={"video_id": "video", "title": "Song", "artists": ["Artist"]},
+    )
+    assert response.status_code == 200
+    assert response.json()["method"] == "manual"
+    assert response.json()["track"]["id"] == 123
+
+
 def test_device_takeover_and_lease_expiry(api, monkeypatch):
     client, app, auth = api
     first, second = str(uuid4()), str(uuid4())

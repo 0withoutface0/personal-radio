@@ -12,7 +12,6 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .autoplay import Autoplay
 from .config import Settings
-from .matching import match_recording
 from .providers import Providers, ProviderUnavailable
 from .reporting import Reporter
 from .store import Store
@@ -73,7 +72,7 @@ class RatingInput(BaseModel):
     value: str
 
 
-class SourceInput(BaseModel):
+class RecordingInput(BaseModel):
     video_id: str = Field(min_length=1, max_length=100)
     title: str = Field(min_length=1, max_length=500)
     artists: list[str] = Field(min_length=1, max_length=20)
@@ -81,6 +80,11 @@ class SourceInput(BaseModel):
     duration: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     explicit: bool | None = None
     isrc: str | None = None
+    video_type: str | None = Field(default=None, max_length=100)
+
+
+class SourceInput(RecordingInput):
+    counterpart: RecordingInput | None = None
 
 
 class CorrectionInput(TrackInput):
@@ -272,7 +276,7 @@ def create_app(settings=None, providers=None):
         correction = store.correction(body.video_id)
         if correction:
             return {"status": "matched", "method": "manual", "track": providers.track(correction)}
-        return match_recording(source, providers.candidates(source))
+        return providers.match(source)
 
     @app.post("/api/device/lease", dependencies=protected)
     def device_lease(body: LeaseInput):

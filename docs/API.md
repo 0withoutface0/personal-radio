@@ -50,4 +50,8 @@ The Flutter clients use `POST /api/queues` for all three modes. Start with `{mod
 
 `POST /api/reporting/dispatch` schedules a serialized background flush and returns 202 immediately. It never retries ambiguous provider mutations. `GET /api/report` also includes `top_artists` (grouped by stored artist credit) alongside durable totals and top songs.
 
+`POST /api/match` accepts optional `video_type` and `counterpart` audio metadata (the same recording fields, without recursive counterparts). Queues retain these fields when YouTube supplies them. Old video entries without album/type metadata are refreshed by their original video ID. A linked audio counterpart takes priority; otherwise official-song search requires matching normalized title, complete artist credits, recording version and compatible video runtime. Tidal duration checks remain within two seconds of the audio reference. Known explicit/clean and ISRC conflicts still reject a match. Saved manual corrections take priority.
+
+Resolved responses include `method: "youtube_counterpart"` or `"youtube_song_metadata"` and `audio_source` for diagnostic provenance. This does not replace the original queue video ID, station context or occurrence ID used for reporting. Ambiguous responses retain ranked candidates and their individual rejection reasons; matching requests themselves create no listening activity.
+
 Outside loopback, disable local account setup with `RADIO_LOCAL_SETUP=0`, whitelist the service hostname/IP with `RADIO_ALLOWED_HOSTS`, and expose the private listener through Tailscale. The Windows CLI `serve --host 100.x.x.x` performs those binding/setup restrictions for the PC's Tailscale address. Provider credentials and opaque provider continuation parameters remain server-side.

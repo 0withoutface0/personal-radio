@@ -23,12 +23,14 @@ class QueueEntry {
   String status;
   String? reason;
   Map<String, dynamic>? tidal;
+  List<Map<String, dynamic>> candidates;
   QueueEntry(
     this.song, {
     String? occurrenceId,
     this.status = 'pending',
     this.reason,
     this.tidal,
+    this.candidates = const [],
   }) : occurrenceId = occurrenceId ?? ids.v4();
   factory QueueEntry.fromJson(Map<String, dynamic> json) => QueueEntry(
     Song(Map<String, dynamic>.from(json['song'])),
@@ -38,6 +40,9 @@ class QueueEntry {
     tidal: json['tidal'] == null
         ? null
         : Map<String, dynamic>.from(json['tidal']),
+    candidates: (json['candidates'] as List? ?? [])
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(),
   );
   Map<String, dynamic> toJson() => {
     'id': occurrenceId,
@@ -45,6 +50,7 @@ class QueueEntry {
     'status': status,
     'reason': reason,
     'tidal': tidal,
+    'candidates': candidates,
   };
 }
 
