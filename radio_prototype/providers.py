@@ -34,11 +34,20 @@ def duration_seconds(value):
 
 
 def youtube_track(item, *, include_counterpart=True):
+    album = item.get("album")
+    artist_refs = [
+        {"id": x.get("id"), "name": x["name"]}
+        for x in item.get("artists", [])
+        if isinstance(x, dict) and x.get("name")
+    ]
     track = {
         "video_id": item.get("videoId"),
         "title": item.get("title", ""),
-        "artists": [x["name"] for x in item.get("artists", []) if x.get("name")],
-        "album": (item.get("album") or {}).get("name"),
+        "artists": [x["name"] for x in artist_refs],
+        "artist_refs": artist_refs,
+        "album": album.get("name") if isinstance(album, dict) else album,
+        "album_id": album.get("id") if isinstance(album, dict) else None,
+        "available": bool(item.get("videoId")) and item.get("isAvailable", True),
         "duration": duration_seconds(
             item.get("duration_seconds") or item.get("duration") or item.get("length")
         ),

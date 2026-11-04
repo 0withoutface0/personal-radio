@@ -8,6 +8,10 @@ The complete schemas are generated at authenticated `GET /api/openapi.json`. A c
 | --- | --- |
 | `GET /api/accounts` | Presence of credential files; not proof of current subscription or streaming access |
 | `GET /api/search?q=…` | Signed-in YouTube song search |
+| `GET /api/catalog/search?q=…&kind=songs/artists/albums` | Typed catalog search; returns `{kind, items}` (default songs) |
+| `GET /api/catalog/artists/{id}` | Artist details, top songs, and release previews |
+| `GET /api/catalog/artists/{id}/releases?kind=albums/singles&limit=100` | Artist releases in provider order; increase limit to load more |
+| `GET /api/catalog/albums/{id}` | Album details and ordered track list, including unavailable tracks |
 | `GET /api/stations` | Personalized RD playlists discovered on the signed-in home page |
 | `POST /api/radio` | `{video_id}` or `{playlist_id}`, optional `limit`; returns ordered recommendations and station context |
 | `POST /api/autoplay` | `{video_id, limit?}` starts normal-play Autoplay; `{cursor}` continues a saved queue |
@@ -59,3 +63,7 @@ Both targets are inserted in one SQLite transaction and deduplicate against the 
 Resolved responses include `method: "youtube_counterpart"` or `"youtube_song_metadata"` and `audio_source` for diagnostic provenance. This does not replace the original queue video ID, station context or occurrence ID used for reporting. Ambiguous responses retain ranked candidates and their individual rejection reasons; matching requests themselves create no listening activity.
 
 Outside loopback, disable local account setup with `RADIO_LOCAL_SETUP=0`, whitelist the service hostname/IP with `RADIO_ALLOWED_HOSTS`, and expose the private listener through Tailscale. The Windows CLI `serve --host 100.x.x.x` performs those binding/setup restrictions for the PC's Tailscale address. Provider credentials and opaque provider continuation parameters remain server-side.
+
+Catalog routing uses signed-in YouTube Music for songs, artists and albums. Tidal remains the recording matcher and lossless audio provider. Catalog songs retain their original `video_id` for history and dual-service ratings, plus `artist_refs: [{id, name}]` and `album_id` for browsing. Artist and album IDs are YouTube browse IDs, not Tidal IDs or subscription channel IDs. Catalog reads never create occurrences, listening events or ratings. Unavailable album tracks remain visible with `available: false`; they must not be played. Album tracks inherit missing artist credits and artwork from their album; explicit status stays track-specific.
+
+Artist release requests keep shelf parameters on the server. `kind` accepts `albums` or `singles`; `limit` is 1–1000. Responses contain `items`, `limit`, `has_more`, and `limited`. Load more by increasing the limit and replacing the displayed list (the provider library has no offset interface). A full page can conservatively report `has_more` until a larger read proves exhaustion. At 1000 releases, `limited: true` explicitly indicates the cap. Search returns up to 30 results. The older song-only `/api/search` remains compatible.

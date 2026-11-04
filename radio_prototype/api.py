@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .autoplay import Autoplay
+from .catalog import Catalog
 from .config import Settings
 from .providers import Providers, ProviderUnavailable
 from .reporting import Reporter
@@ -107,13 +108,14 @@ def create_app(settings=None, providers=None):
     streams = Streams(providers)
     reporter = Reporter(store, providers)
     autoplay = Autoplay(providers, store)
+    catalog = Catalog(providers)
     token = settings.device_token()
     session_token = secrets.token_urlsafe(32)
     jobs = {}
     decode_lock = threading.Lock()
     app = FastAPI(
         title="Personal lossless radio",
-        version="0.2.0",
+        version="0.3.0",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -225,6 +227,30 @@ def create_app(settings=None, providers=None):
         if not 1 <= len(q) <= 300:
             raise ValueError("Invalid query length")
         return providers.search(q)
+
+    @app.get("/api/catalog/search", dependencies=protected)
+    def catalog_search(q: str, kind: Literal["songs", "artists", "albums"] = "songs"):
+        if not 1 <= len(q.strip()) <= 300:
+            raise ValueError("Invalid query length")
+        return catalog.search(q.strip(), kind)
+
+    @app.get("/api/catalog/artists/{artist_id}", dependencies=protected)
+    def catalog_artist(artist_id: str):
+        return catalog.artist(artist_id)
+
+    @app.get("/api/catalog/artists/{artist_id}/releases", dependencies=protected)
+    def artist_releases(
+        artist_id: str,
+        kind: Literal["albums", "singles"] = "albums",
+        limit: int = 100,
+    ):
+        if not 1 <= limit <= 1000:
+            raise ValueError("Invalid release limit")
+        return catalog.releases(artist_id, kind, limit)
+
+    @app.get("/api/catalog/albums/{album_id}", dependencies=protected)
+    def catalog_album(album_id: str):
+        return catalog.album(album_id)
 
     @app.get("/api/stations", dependencies=protected)
     def stations():
