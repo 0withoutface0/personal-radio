@@ -1,5 +1,6 @@
 .venv
 .cache
+.codex-remote-attachments
 .tools
 .git
 .pytest_cache
