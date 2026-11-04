@@ -2,13 +2,15 @@
 
 One Flutter application targets Windows x64 and Android 7.0+ (API 24). Discover offers separate **Songs**, **Artists** and **Albums** searches. The play button plays a song directly without creating radio. Artist pages show top songs, albums and singles/EPs; album pages show the ordered track list, **Play album**, and playback starting at a selected track. Song actions also offer **Autoplay** and **Start radio / mix**. Stations uses the personalized mixes discovered from your account.
 
+Queue removal targets a single occurrence, so other copies of the song stay in place. Use the row's **Remove from queue** button, its right-click/long-press menu, or swipe the row from right to left. Removing the current song skips to the next available song (or stops if the queue ends); it never sends a dislike or a completion. Removing other rows leaves playback and station context intact. Saved listening events remain in the outbox even after their queue row is removed.
+
 Browsing uses your YouTube Music catalog. Song actions include **View artist** and **View album** where those links are supplied; album artist names open their pages. All songs still pass through the conservative Tidal matcher and original lossless stream proxy. Unavailable or uncertain recordings remain visible in Queue. Direct playback creates a finite queue; it does not enable recommendations automatically. A deliberate new Play creates new occurrence IDs while resuming the current occurrence keeps its saved ID.
 
 ## Run
 
 Right-click a song in search results, artist pages, album tracks, Queue, now playing or the bottom player bar to open its song options at the pointer. Touch users can long-press. The menu offers Play next, Add to queue, Autoplay, Start radio / mix, and the artist/album links supplied with that song. Opening or dismissing the menu leaves playback and the queue untouched. The existing overflow buttons use the same actions.
 
-Updating from v0.2.0 to v0.2.1 requires only the new player bundle/APK. The server API and saved queue/outbox format are unchanged.
+Updating from v0.2.0/v0.2.1 to v0.2.2 requires only the new player bundle/APK. The server API and saved queue/outbox format are unchanged.
 
 The **Now playing options** menu includes song actions and opens the linked album or credited artists. **Ctrl+K** returns to catalog search from any page. Starting a search or opening a catalog page dismisses the phone keyboard.
 
@@ -96,6 +98,4 @@ flutter test integration_test/windows_live_test.dart -d windows
 flutter test integration_test/windows_live_test.dart -d windows --dart-define=RADIO_FULL_TRACK=true
 ```
 
-Offline tests use fixtures and never call your provider accounts. `scripts/Package-Apps.ps1` copies release outputs and writes SHA-256 checksums. No account file, pairing token, signing secret, or provider URL is included in the packages.
-
-Queue removal targets a single occurrence, so other copies of the song stay in place. Use the row's **Remove from queue** button, its right-click/long-press menu, or swipe the row from right to left. Removing the current song skips to the next available song (or stops if the queue ends); it never sends a dislike or a completion. Removing other rows leaves playback and station context intact. Saved listening events remain in the outbox even after their queue row is removed.
+Offline tests use fixtures and never call your provider accounts. Release packaging requires Android SDK `aapt2` and checks the notification and media control icons in the compiled APK, because these are resolved by name and can otherwise be removed by resource shrinking. `scripts/Package-Apps.ps1` copies release outputs and writes SHA-256 checksums. No account file, pairing token, signing secret, or provider URL is included in the packages.
