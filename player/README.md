@@ -6,6 +6,8 @@ Browsing uses your YouTube Music catalog. Song actions include **View artist** a
 
 ## Run
 
+The now-playing **Browse this song** menu opens the linked album or credited artists. **Ctrl+K** returns to catalog search from any page. Starting a search or opening a catalog page dismisses the phone keyboard.
+
 Resuming a paused track keeps its occurrence ID and saved position. Replaying a completed or previous track creates a fresh occurrence and starts at zero; any pending events for the older occurrence remain queued. Adding songs after a queue finishes leaves playback stopped; pressing Play then advances to the new songs.
 
 **Play next** inserts immediately after the current song. Choosing Play next again puts the new selection first. **Add to queue** appends after all currently loaded tracks, before recommendation batches fetched later. Album actions insert the complete track list in album order. Neither action starts playback or changes your current radio/Autoplay station, cursor, position, or pending listening events. Queue marks these tracks **Added by you**. Each addition has a new occurrence ID, including repeated additions of the same song. An empty queue stays stopped until you select **Play queue** or a track's play button.

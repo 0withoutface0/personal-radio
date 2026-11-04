@@ -45,6 +45,7 @@ class CatalogViewState extends State<CatalogView> {
   });
 
   Future<void> _open(String kind, String id) async {
+    widget.focus.unfocus();
     final request = ++_request;
     setState(() => _loading = true);
     try {
@@ -91,6 +92,7 @@ class CatalogViewState extends State<CatalogView> {
   }
 
   void _search(String query) {
+    widget.focus.unfocus();
     setState(() {
       _request++;
       _pages.clear();
@@ -98,6 +100,19 @@ class CatalogViewState extends State<CatalogView> {
     });
     r.search(query, kind: _kind);
   }
+
+  void focusSearch() {
+    setState(() {
+      _request++;
+      _pages.clear();
+      _loading = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.focus.requestFocus();
+    });
+  }
+
+  void browse(String kind, String id) => _open(kind, id);
 
   Future<void> _enqueue(List<Song> songs, {bool next = false}) async {
     final count = await r.enqueue(songs, next: next);

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_radio/app.dart';
 import 'package:personal_radio/models.dart';
@@ -95,6 +96,48 @@ void main() {
   );
 
   for (final size in [const Size(390, 844), const Size(1360, 850)]) {
+    testWidgets(
+      'now playing opens its album and Ctrl+K returns to search at $size',
+      (tester) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        f.radio.entries = [
+          QueueEntry(song('current'), tidal: {'id': 123}),
+        ];
+        f.radio.currentIndex = 0;
+        f.catalog = (_) async => {
+          'id': 'MPRE1',
+          'title': 'Album',
+          'tracks': [song('one').source],
+        };
+        await tester.pumpWidget(RadioApp(radio: f.radio));
+        if (size.width < 1000) {
+          await tester.tap(find.text('Song current'));
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.byTooltip('Browse this song'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('View album'));
+        await tester.pumpAndSettle();
+        expect(find.text('Play album'), findsOneWidget);
+        expect(find.text('Song one'), findsOneWidget);
+        expect(f.requests.every((q) => q.method == 'GET'), true);
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await tester.pumpAndSettle();
+        expect(find.byType(TextField), findsOneWidget);
+        expect(
+          tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus,
+          true,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
     testWidgets(
       'browse artist releases, album tracks, back and direct playback at $size',
       (tester) async {

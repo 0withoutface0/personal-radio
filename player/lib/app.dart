@@ -55,6 +55,7 @@ class RadioHome extends StatefulWidget {
 class _RadioHomeState extends State<RadioHome> {
   RadioController get r => widget.radio;
   int tab = 0;
+  final catalogKey = GlobalKey<CatalogViewState>();
   double? draggingPosition;
   final search = TextEditingController(), focus = FocusNode();
   final labels = const ['Discover', 'Stations', 'Queue', 'Listening'];
@@ -83,142 +84,147 @@ class _RadioHomeState extends State<RadioHome> {
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
           changeTab(0);
-          focus.requestFocus();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) catalogKey.currentState?.focusSearch();
+          });
         },
       },
-      child: LayoutBuilder(
-        builder: (context, size) {
-          final wide = size.maxWidth >= 1000;
-          return Scaffold(
-            body: SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 20, 16, 12),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(9),
-                          decoration: BoxDecoration(
-                            color: lime,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(Icons.graphic_eq, color: ink),
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Text(
-                            'PERSONAL RADIO',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 2,
-                            ),
-                          ),
-                        ),
-                        if (wide)
-                          Text(
-                            r.connectionMessage ?? 'Connect your server',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.white54,
-                            ),
-                          ),
-                        IconButton(
-                          tooltip: 'Connection settings',
-                          onPressed: settings,
-                          icon: const Icon(Icons.settings_outlined),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (r.error != null)
-                    Container(
-                      color: const Color(0xFF463421),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
+      child: FocusScope(
+        autofocus: true,
+        child: LayoutBuilder(
+          builder: (context, size) {
+            final wide = size.maxWidth >= 1000;
+            return Scaffold(
+              body: SafeArea(
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 20, 16, 12),
                       child: Row(
                         children: [
-                          const Icon(Icons.info_outline, size: 18),
-                          const SizedBox(width: 10),
-                          Expanded(
+                          Container(
+                            padding: const EdgeInsets.all(9),
+                            decoration: BoxDecoration(
+                              color: lime,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(Icons.graphic_eq, color: ink),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
                             child: Text(
-                              r.error!,
-                              style: const TextStyle(fontSize: 12),
+                              'PERSONAL RADIO',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 2,
+                              ),
                             ),
                           ),
-                          if (r.error!.contains('Another device'))
-                            TextButton(
-                              onPressed: r.takeover,
-                              child: const Text('Take over'),
+                          if (wide)
+                            Text(
+                              r.connectionMessage ?? 'Connect your server',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white54,
+                              ),
                             ),
                           IconButton(
-                            onPressed: () {
-                              r.error = null;
-                              r.update();
-                            },
-                            icon: const Icon(Icons.close, size: 18),
+                            tooltip: 'Connection settings',
+                            onPressed: settings,
+                            icon: const Icon(Icons.settings_outlined),
                           ),
                         ],
                       ),
                     ),
-                  Expanded(
-                    child: !r.ready
-                        ? connectScreen()
-                        : Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              if (wide) sidebar(),
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    24,
-                                    18,
-                                    24,
-                                    12,
-                                  ),
-                                  child: content(),
-                                ),
+                    if (r.error != null)
+                      Container(
+                        color: const Color(0xFF463421),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, size: 18),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                r.error!,
+                                style: const TextStyle(fontSize: 12),
                               ),
-                              if (wide)
-                                SizedBox(
-                                  width: 310,
+                            ),
+                            if (r.error!.contains('Another device'))
+                              TextButton(
+                                onPressed: r.takeover,
+                                child: const Text('Take over'),
+                              ),
+                            IconButton(
+                              onPressed: () {
+                                r.error = null;
+                                r.update();
+                              },
+                              icon: const Icon(Icons.close, size: 18),
+                            ),
+                          ],
+                        ),
+                      ),
+                    Expanded(
+                      child: !r.ready
+                          ? connectScreen()
+                          : Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (wide) sidebar(),
+                                Expanded(
                                   child: Padding(
                                     padding: const EdgeInsets.fromLTRB(
-                                      0,
+                                      24,
                                       18,
-                                      20,
+                                      24,
                                       12,
                                     ),
-                                    child: nowPlaying(),
+                                    child: content(),
                                   ),
                                 ),
-                            ],
-                          ),
-                  ),
-                  if (r.ready && r.current != null) transport(wide),
-                ],
-              ),
-            ),
-            bottomNavigationBar: !wide && r.ready
-                ? NavigationBar(
-                    selectedIndex: tab,
-                    onDestinationSelected: changeTab,
-                    destinations: List.generate(
-                      4,
-                      (i) => NavigationDestination(
-                        icon: Icon(icons[i]),
-                        label: labels[i],
-                      ),
+                                if (wide)
+                                  SizedBox(
+                                    width: 310,
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        0,
+                                        18,
+                                        20,
+                                        12,
+                                      ),
+                                      child: nowPlaying(),
+                                    ),
+                                  ),
+                              ],
+                            ),
                     ),
-                  )
-                : null,
-          );
-        },
+                    if (r.ready && r.current != null) transport(wide),
+                  ],
+                ),
+              ),
+              bottomNavigationBar: !wide && r.ready
+                  ? NavigationBar(
+                      selectedIndex: tab,
+                      onDestinationSelected: changeTab,
+                      destinations: List.generate(
+                        4,
+                        (i) => NavigationDestination(
+                          icon: Icon(icons[i]),
+                          label: labels[i],
+                        ),
+                      ),
+                    )
+                  : null,
+            );
+          },
+        ),
       ),
     ),
   );
@@ -354,7 +360,8 @@ class _RadioHomeState extends State<RadioHome> {
     2 => queueList(),
     _ => listening(),
   };
-  Widget discover() => CatalogView(radio: r, search: search, focus: focus);
+  Widget discover() =>
+      CatalogView(key: catalogKey, radio: r, search: search, focus: focus);
   Widget stationList() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -672,20 +679,57 @@ class _RadioHomeState extends State<RadioHome> {
     );
   }
 
-  Widget nowPlaying() => Card(
+  Widget nowPlaying({VoidCallback? dismiss}) => Card(
     margin: EdgeInsets.zero,
     child: SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'NOW PLAYING',
-            style: TextStyle(
-              color: Colors.white38,
-              fontSize: 10,
-              letterSpacing: 2,
-            ),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'NOW PLAYING',
+                  style: TextStyle(
+                    color: Colors.white38,
+                    fontSize: 10,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ),
+              if (r.current != null &&
+                  (r.current!.song.albumId != null ||
+                      r.current!.song.artistRefs.any((a) => a['id'] != null)))
+                PopupMenuButton<String>(
+                  tooltip: 'Browse this song',
+                  onSelected: (value) {
+                    dismiss?.call();
+                    changeTab(0);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      final split = value.indexOf(':');
+                      catalogKey.currentState?.browse(
+                        value.substring(0, split),
+                        value.substring(split + 1),
+                      );
+                    });
+                  },
+                  itemBuilder: (_) => [
+                    if (r.current!.song.albumId != null)
+                      PopupMenuItem(
+                        value: 'album:${r.current!.song.albumId}',
+                        child: const Text('View album'),
+                      ),
+                    for (final artist in r.current!.song.artistRefs)
+                      if (artist['id'] != null)
+                        PopupMenuItem(
+                          value: 'artist:${artist['id']}',
+                          child: Text('View artist: ${artist['name']}'),
+                        ),
+                  ],
+                ),
+            ],
           ),
           const SizedBox(height: 26),
           LayoutBuilder(
@@ -820,11 +864,11 @@ class _RadioHomeState extends State<RadioHome> {
             onTap: () => showModalBottomSheet(
               context: context,
               isScrollControlled: true,
-              builder: (_) => AnimatedBuilder(
+              builder: (sheetContext) => AnimatedBuilder(
                 animation: r,
                 builder: (_, _) => SizedBox(
                   height: MediaQuery.sizeOf(context).height * .8,
-                  child: nowPlaying(),
+                  child: nowPlaying(dismiss: () => Navigator.pop(sheetContext)),
                 ),
               ),
             ),
