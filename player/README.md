@@ -8,6 +8,8 @@ Browsing uses your YouTube Music catalog. Song actions include **View artist** a
 
 Right-click a song in search results, artist pages, album tracks, Queue, now playing or the bottom player bar to open its song options at the pointer. Touch users can long-press. The menu offers Play next, Add to queue, Autoplay, Start radio / mix, and the artist/album links supplied with that song. Opening or dismissing the menu leaves playback and the queue untouched. The existing overflow buttons use the same actions.
 
+Updating from v0.2.0 to v0.2.1 requires only the new player bundle/APK. The server API and saved queue/outbox format are unchanged.
+
 The **Now playing options** menu includes song actions and opens the linked album or credited artists. **Ctrl+K** returns to catalog search from any page. Starting a search or opening a catalog page dismisses the phone keyboard.
 
 Resuming a paused track keeps its occurrence ID and saved position. Replaying a completed or previous track creates a fresh occurrence and starts at zero; any pending events for the older occurrence remain queued. Adding songs after a queue finishes leaves playback stopped; pressing Play then advances to the new songs.
