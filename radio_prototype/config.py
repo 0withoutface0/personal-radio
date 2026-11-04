@@ -1,3 +1,4 @@
+import json
 import os
 import secrets
 from dataclasses import dataclass
@@ -17,12 +18,33 @@ def private_write(path: Path, text: str) -> None:
 class Settings:
     data: Path
     local_setup: bool = True
+    extra_allowed_hosts: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls):
+        data = Path(os.environ.get("RADIO_DATA_DIR", "data")).resolve()
+        path = data / "server-settings.json"
+        config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        if not isinstance(config, dict) or set(config) - {"local_setup", "allowed_hosts"}:
+            raise ValueError("Invalid server-settings.json")
+        setup = config.get("local_setup", True)
+        hosts = config.get("allowed_hosts", [])
+        if (
+            not isinstance(setup, bool)
+            or not isinstance(hosts, list)
+            or any(
+                not isinstance(host, str)
+                or not host
+                or len(host) > 253
+                or any(c.isspace() or c in "*/\\@?#" for c in host)
+                for host in hosts
+            )
+        ):
+            raise ValueError("Invalid server-settings.json")
         return cls(
-            Path(os.environ.get("RADIO_DATA_DIR", "data")).resolve(),
-            os.environ.get("RADIO_LOCAL_SETUP", "1") == "1",
+            data,
+            os.environ.get("RADIO_LOCAL_SETUP", "1" if setup else "0") == "1",
+            tuple(hosts),
         )
 
     def __post_init__(self):
@@ -48,6 +70,7 @@ class Settings:
             "localhost",
             "127.0.0.1",
             "[::1]",
+            *self.extra_allowed_hosts,
             *[
                 host.strip()
                 for host in os.environ.get("RADIO_ALLOWED_HOSTS", "").split(",")

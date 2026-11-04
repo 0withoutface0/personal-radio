@@ -2,7 +2,7 @@
 
 Version 0.2.1 is an early release. The Windows executable, signed Android APK and Linux Docker image have been built. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
 
-Automated checks: **127 Python tests**, **48 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
+Automated checks: **136 Python tests**, **48 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
 
 | Check | Evidence / status |
 | --- | --- |
@@ -33,7 +33,8 @@ Automated checks: **127 Python tests**, **48 Flutter unit/widget tests**, clean 
 | Android screen-off/notification/headset/interruptions | Implemented; physical-device verification pending |
 | Continuous full Hi-Res playback on each device | Pending |
 | Docker | Image built; isolated read-only/non-root container passed auth, setup isolation and restart persistence checks |
-| Remote Linux / Tailscale phone deployment | Instructions supplied; deployment acceptance pending |
+| Windows-hosted Tailscale phone access | Private HTTPS proxy configured with verified certificate; authenticated/unauthenticated API, host restriction and disabled setup checked; TCP fallback also verified; APK and approved connection file sent to own phone; installation/playback remains a user/device check |
+| Remote Linux deployment | Instructions supplied; deployment acceptance pending |
 
 The machine-readable prototype gate has stricter evidence requirements, including distinct full-playback and newly-visible-history checks. A built app does not satisfy every gate. Source decoding does not establish that a person heard a full recording, and source resolution does not establish bit-perfect hardware output.
 

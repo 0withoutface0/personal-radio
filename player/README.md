@@ -26,7 +26,17 @@ For a standalone Windows install, download `PersonalRadio-Windows-x64.zip` from 
 
 Download `PersonalRadio-Android.apk` from Releases, copy it to your phone, allow installation from the app you use to open it, and install. Connect Tailscale on the phone. In Connection settings, enter `http://YOUR_PC_TAILSCALE_IP:8765` or your private HTTPS origin, plus the device token. `localhost` on Android means the phone, not the server. The Android emulator can use `http://10.0.2.2:8765` with that host added to `RADIO_ALLOWED_HOSTS` on the server. Provider cookies and Tidal session tokens belong only on the server.
 
-To make the Windows-hosted server reachable from the phone, stop its existing loopback instance, then run from the repository root:
+For phone access while keeping the Windows launcher on loopback, use [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve). Create the private, Git-ignored `data/server-settings.json` with your PC's actual Tailscale IP and DNS name:
+
+```json
+{"local_setup": false, "allowed_hosts": ["100.x.x.x", "YOUR_PC.YOUR_TAILNET.ts.net"]}
+```
+
+Restart the Python service to load it, then run `tailscale serve --bg --tcp=8765 tcp://127.0.0.1:8765`. TCP forwarding accepts the private IP directly; the HTTP reverse-proxy mode routes by DNS name. The phone's server origin is `http://100.x.x.x:8765`; the Windows app keeps `http://127.0.0.1:8765`. Serve shares this listener privately within the tailnet, and the device token is still required. No public Funnel or router port forwarding is needed. Keep this PC awake with the server and Tailscale running. The proxy persists, and the normal launcher reloads the saved server settings after a restart.
+
+If HTTPS is already enabled for your tailnet, use `tailscale serve --bg --https=443 http://127.0.0.1:8765` and the matching HTTPS DNS origin instead. Add that DNS name to `allowed_hosts`. Stop only the listener you configured with `tailscale serve --tcp=8765 off` or `tailscale serve --https=443 off`; do not reset unrelated Serve configurations. Account setup is disabled while shared. To reconnect accounts, turn off the proxy and run the interactive `auth youtube` / `auth tidal` CLI commands, or temporarily restore local setup and restart on loopback. Environment variables override the settings file for local setup; `RADIO_ALLOWED_HOSTS` adds further host names.
+
+Alternatively, to bind directly to the Tailscale interface, stop the existing loopback instance and run from the repository root:
 
 ```powershell
 .venv\Scripts\python.exe -m radio_prototype serve --host YOUR_PC_TAILSCALE_IP
