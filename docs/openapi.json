@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Personal lossless radio",
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "paths": {
     "/": {
@@ -377,6 +377,80 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/home": {
+      "get": {
+        "summary": "Home Shelves",
+        "operationId": "home_shelves_api_home_get",
+        "parameters": [
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/home/play": {
+      "post": {
+        "summary": "Home Play",
+        "operationId": "home_play_api_home_play_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HomePlayInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -1212,6 +1286,27 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HomePlayInput": {
+        "properties": {
+          "selection_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Selection Id"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 25
+          }
+        },
+        "type": "object",
+        "required": [
+          "selection_id"
+        ],
+        "title": "HomePlayInput"
       },
       "LeaseInput": {
         "properties": {

@@ -13,6 +13,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .autoplay import Autoplay
 from .catalog import Catalog
 from .config import Settings
+from .home import HomeFeed
 from .providers import Providers, ProviderUnavailable
 from .reporting import Reporter
 from .store import Store
@@ -39,6 +40,11 @@ class AutoplayInput(BaseModel):
 class QueueInput(AutoplayInput):
     mode: Literal["autoplay", "radio", "station"] = "autoplay"
     playlist_id: str | None = Field(default=None, max_length=200)
+
+
+class HomePlayInput(BaseModel):
+    selection_id: UUID
+    limit: int = Field(default=25, ge=1, le=100)
 
 
 class LeaseInput(BaseModel):
@@ -109,13 +115,14 @@ def create_app(settings=None, providers=None):
     reporter = Reporter(store, providers)
     autoplay = Autoplay(providers, store)
     catalog = Catalog(providers)
+    home = HomeFeed(providers)
     token = settings.device_token()
     session_token = secrets.token_urlsafe(32)
     jobs = {}
     decode_lock = threading.Lock()
     app = FastAPI(
         title="Personal lossless radio",
-        version="0.3.0",
+        version="0.4.0",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -125,6 +132,7 @@ def create_app(settings=None, providers=None):
     app.state.streams = streams
     app.state.reporter = reporter
     app.state.autoplay = autoplay
+    app.state.home = home
 
     @app.middleware("http")
     async def safe_errors(request, call_next):
@@ -255,6 +263,15 @@ def create_app(settings=None, providers=None):
     @app.get("/api/stations", dependencies=protected)
     def stations():
         return providers.stations()
+
+    @app.get("/api/home", dependencies=protected)
+    def home_shelves(refresh: bool = False):
+        return home.snapshot(refresh=refresh)
+
+    @app.post("/api/home/play", dependencies=protected)
+    def home_play(body: HomePlayInput):
+        endpoint, mode, title = home.playback(str(body.selection_id))
+        return autoplay.start_returned(endpoint, mode, title, body.limit)
 
     @app.post("/api/radio", dependencies=protected)
     def radio(body: RadioInput):

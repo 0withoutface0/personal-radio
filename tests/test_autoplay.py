@@ -312,3 +312,32 @@ def test_api_rejects_invalid_autoplay_input_before_provider_calls(tmp_path, body
         )
         assert result.status_code == 422
         assert providers.calls == []
+
+
+@pytest.mark.parametrize("mode", ["autoplay", "radio", "station", "queue"])
+def test_returned_home_endpoint_preserves_context_and_survives_restart(autoplay, mode):
+    engine, providers, store = autoplay
+    endpoint = {"playlistId": "RDreturned-seed", "params": "private-home-context"}
+    first = engine.start_returned(endpoint, mode, "Home selection", limit=3)
+    assert first["title"] == "Home selection"
+    assert first["mode"] == mode
+    assert providers.calls[0][0]["params"] == "private-home-context"
+    restarted = Autoplay(providers, Store(store.path))
+    second = restarted.next(first["next_cursor"])
+    assert second["mode"] == mode
+    assert ids(first) + ids(second) == [f"seed-{i}" for i in range(1, 7)]
+    assert providers.calls[-1][0]["params"] == "private-home-context"
+    assert "private-home-context" not in str(first) + str(second)
+    assert store.submissions() == []
+
+
+def test_home_play_all_follows_youtubes_returned_automix_instead_of_inventing_radio(autoplay):
+    engine, providers, _ = autoplay
+    batch = engine.start_returned(
+        {"videoId": "seed", "params": "multi-seed-context"}, "radio", "Quick picks", limit=3
+    )
+    assert providers.calls[0][0]["params"] == "multi-seed-context"
+    assert "playlistId" not in providers.calls[0][0]
+    assert providers.calls[1][0]["playlistId"] == "RDreturned-seed"
+    assert providers.calls[1][0]["params"] == "server-params-seed"
+    assert ids(batch) == ["seed", "seed-1", "seed-2"]

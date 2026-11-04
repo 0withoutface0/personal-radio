@@ -163,6 +163,47 @@ class Autoplay:
             self.store.add_autoplay_page(cursor, state)
             return self.next(cursor)
 
+    def start_returned(self, endpoint, mode, title, limit=25):
+        """Use a home shelf's actual play/Play all target, including its params."""
+        if not (endpoint.get("videoId") or endpoint.get("playlistId")):
+            raise ValueError("Home playback requires a returned watch endpoint")
+        if mode not in ("autoplay", "radio", "station", "queue") or not 1 <= limit <= 100:
+            raise ValueError("Invalid home playback mode or page size")
+        with self.lock:
+            body = {**NEXT_OPTIONS, **deepcopy(endpoint)}
+            panel = panel_from_response(self.providers.watch_next(body))
+            tracks = tracks_from_panel(panel)
+            preview = next(
+                (
+                    nav(x, AUTOMIX_ENDPOINT, True)
+                    for x in panel["contents"]
+                    if nav(x, AUTOMIX_ENDPOINT, True)
+                ),
+                None,
+            )
+            if preview and mode != "queue":
+                body = {**NEXT_OPTIONS, **deepcopy(preview)}
+                panel = panel_from_response(self.providers.watch_next(body))
+                upcoming = tracks_from_panel(panel)
+                if tracks and upcoming and tracks[-1]["video_id"] == upcoming[0]["video_id"]:
+                    upcoming = upcoming[1:]
+                tracks.extend(upcoming)
+            if not tracks:
+                raise ProviderUnavailable("YouTube returned no tracks for this home selection")
+            state = {
+                "mode": mode,
+                "session_id": str(uuid4()),
+                "seed_video_id": endpoint.get("videoId"),
+                "playlist_id": panel.get("playlistId") or body.get("playlistId"),
+                "limit": limit,
+                "request": body,
+                "pending": tracks,
+                "continuation": continuation_token(panel),
+            }
+            cursor = str(uuid4())
+            self.store.add_autoplay_page(cursor, state)
+            return {**self.next(cursor), "title": title}
+
     def next(self, cursor):
         with self.lock:
             state, cached = self.store.autoplay_page(cursor)
