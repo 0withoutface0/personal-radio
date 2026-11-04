@@ -65,6 +65,7 @@ void main() {
       await r.prefetch();
       final first = r.current!.occurrenceId;
       final next = r.entries[1].occurrenceId;
+      f.player.onStop = () => r.advance(natural: true);
       r.outbox = [
         {
           'id': 'heard',

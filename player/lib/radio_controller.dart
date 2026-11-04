@@ -527,8 +527,15 @@ class RadioController extends ChangeNotifier {
     busy = true;
     try {
       if (active) {
-        await pause();
-        await player?.stop();
+        // Native stop can emit a completion callback. Keep the same transition
+        // guard as a manual skip so it cannot complete/advance the old row.
+        _advancing = true;
+        try {
+          await pause();
+          await player?.stop();
+        } finally {
+          _advancing = false;
+        }
         _loadedOccurrence = null;
         position = duration = Duration.zero;
         quality = null;

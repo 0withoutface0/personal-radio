@@ -30,6 +30,7 @@ class FakePlayer extends Fake implements mk.Player {
   @override
   mk.PlayerState state = const mk.PlayerState();
   final List<mk.Media> opened = [];
+  Future<void> Function()? onStop;
   @override
   Future<void> open(mk.Playable playable, {bool play = true}) async {
     final media = playable as mk.Media;
@@ -50,6 +51,7 @@ class FakePlayer extends Fake implements mk.Player {
   @override
   Future<void> stop() async {
     state = const mk.PlayerState();
+    await onStop?.call();
   }
 
   @override
