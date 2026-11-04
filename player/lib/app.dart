@@ -453,53 +453,89 @@ class _RadioHomeState extends State<RadioHome> {
                   final entry = r.entries[i];
                   final active = i == r.currentIndex,
                       skipped = entry.status == 'skipped';
-                  return SongActions(
-                    radio: r,
-                    song: entry.song,
-                    onBrowse: browse,
-                    builder: (_) => Container(
-                      margin: const EdgeInsets.only(bottom: 4),
-                      decoration: BoxDecoration(
-                        color: active ? lime.withValues(alpha: .09) : null,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ListTile(
-                        leading: active
-                            ? const Icon(Icons.graphic_eq, color: lime)
-                            : skipped
-                            ? const Icon(
-                                Icons.not_interested,
-                                color: Colors.orangeAccent,
-                              )
-                            : artwork(entry.song, 36),
-                        title: Text(
-                          entry.song.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: active ? lime : null),
+                  return Dismissible(
+                    key: ValueKey(entry.occurrenceId),
+                    direction: r.changingQueue
+                        ? DismissDirection.none
+                        : DismissDirection.endToStart,
+                    background: Container(
+                      alignment: AlignmentDirectional.centerEnd,
+                      padding: const EdgeInsets.only(right: 24),
+                      color: Colors.red.withValues(alpha: .15),
+                      child: const Icon(Icons.delete_outline),
+                    ),
+                    confirmDismiss: (_) async {
+                      // The controller saves the deletion before rebuilding.
+                      // Returning false avoids dismissing a stale row if busy.
+                      await r.removeOccurrence(entry.occurrenceId);
+                      return false;
+                    },
+                    child: SongActions(
+                      radio: r,
+                      song: entry.song,
+                      queueOccurrenceId: entry.occurrenceId,
+                      onBrowse: browse,
+                      builder: (_) => Container(
+                        margin: const EdgeInsets.only(bottom: 4),
+                        decoration: BoxDecoration(
+                          color: active ? lime.withValues(alpha: .09) : null,
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        subtitle: Text(
-                          skipped
-                              ? '${entry.song.artist} · Skipped\n${entry.reason}'
-                              : '${entry.song.artist}${entry.addedByUser ? ' · Added by you' : ''}${entry.tidal != null ? ' · Matched' : ''}',
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 12,
+                        child: ListTile(
+                          leading: active
+                              ? const Icon(Icons.graphic_eq, color: lime)
+                              : skipped
+                              ? const Icon(
+                                  Icons.not_interested,
+                                  color: Colors.orangeAccent,
+                                )
+                              : artwork(entry.song, 36),
+                          title: Text(
+                            entry.song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: active ? lime : null),
+                          ),
+                          subtitle: Text(
+                            skipped
+                                ? '${entry.song.artist} · Skipped\n${entry.reason}'
+                                : '${entry.song.artist}${entry.addedByUser ? ' · Added by you' : ''}${entry.tidal != null ? ' · Matched' : ''}',
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 12,
+                            ),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              skipped
+                                  ? IconButton(
+                                      tooltip: 'Save a recording correction',
+                                      icon: const Icon(
+                                        Icons.edit_outlined,
+                                        size: 18,
+                                      ),
+                                      onPressed: () => correct(entry),
+                                    )
+                                  : IconButton(
+                                      tooltip: 'Play this occurrence',
+                                      icon: const Icon(Icons.play_arrow),
+                                      onPressed: () => r.selectEntry(i),
+                                    ),
+                              IconButton(
+                                tooltip: 'Remove from queue',
+                                icon: const Icon(Icons.close, size: 18),
+                                onPressed: r.changingQueue
+                                    ? null
+                                    : () => r.removeOccurrence(
+                                        entry.occurrenceId,
+                                      ),
+                              ),
+                            ],
                           ),
                         ),
-                        trailing: skipped
-                            ? IconButton(
-                                tooltip: 'Save a recording correction',
-                                icon: const Icon(Icons.edit_outlined, size: 18),
-                                onPressed: () => correct(entry),
-                              )
-                            : IconButton(
-                                tooltip: 'Play this occurrence',
-                                icon: const Icon(Icons.play_arrow),
-                                onPressed: () => r.selectEntry(i),
-                              ),
                       ),
                     ),
                   );

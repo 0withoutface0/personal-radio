@@ -48,6 +48,11 @@ class FakePlayer extends Fake implements mk.Player {
   }
 
   @override
+  Future<void> stop() async {
+    state = const mk.PlayerState();
+  }
+
+  @override
   Future<void> seek(Duration value) async {
     state = state.copyWith(position: value);
   }

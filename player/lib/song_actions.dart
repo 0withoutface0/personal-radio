@@ -10,6 +10,7 @@ class SongActions extends StatelessWidget {
   final void Function(String kind, String id) onBrowse;
   final Widget Function(Widget menuButton) builder;
   final String buttonTooltip;
+  final String? queueOccurrenceId;
 
   const SongActions({
     super.key,
@@ -18,9 +19,16 @@ class SongActions extends StatelessWidget {
     required this.onBrowse,
     required this.builder,
     this.buttonTooltip = 'Song actions',
+    this.queueOccurrenceId,
   });
 
   List<PopupMenuEntry<String>> _items() => [
+    if (queueOccurrenceId != null)
+      PopupMenuItem(
+        value: 'remove',
+        enabled: !radio.changingQueue,
+        child: const Text('Remove from queue'),
+      ),
     PopupMenuItem(
       value: 'next',
       enabled: radio.ready && !radio.changingQueue && song!.available,
@@ -53,7 +61,9 @@ class SongActions extends StatelessWidget {
 
   Future<void> _select(BuildContext context, String value) async {
     final selected = song!;
-    if (value == 'album') {
+    if (value == 'remove') {
+      await radio.removeOccurrence(queueOccurrenceId!);
+    } else if (value == 'album') {
       onBrowse('album', selected.albumId!);
     } else if (value.startsWith('artist:')) {
       onBrowse('artist', value.substring(7));

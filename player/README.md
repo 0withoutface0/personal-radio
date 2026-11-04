@@ -97,3 +97,5 @@ flutter test integration_test/windows_live_test.dart -d windows --dart-define=RA
 ```
 
 Offline tests use fixtures and never call your provider accounts. `scripts/Package-Apps.ps1` copies release outputs and writes SHA-256 checksums. No account file, pairing token, signing secret, or provider URL is included in the packages.
+
+Queue removal targets a single occurrence, so other copies of the song stay in place. Use the row's **Remove from queue** button, its right-click/long-press menu, or swipe the row from right to left. Removing the current song skips to the next available song (or stops if the queue ends); it never sends a dislike or a completion. Removing other rows leaves playback and station context intact. Saved listening events remain in the outbox even after their queue row is removed.

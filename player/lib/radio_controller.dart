@@ -517,6 +517,46 @@ class RadioController extends ChangeNotifier {
     update();
   }
 
+  /// Remove one occurrence, even when the same song appears more than once.
+  /// The outbox and recommendation cursor belong to the session, not the row.
+  Future<bool> removeOccurrence(String occurrenceId) async {
+    if (changingQueue || _recovering) return false;
+    final index = entries.indexWhere((e) => e.occurrenceId == occurrenceId);
+    if (index < 0) return false;
+    final active = index == currentIndex;
+    busy = true;
+    try {
+      if (active) {
+        await pause();
+        await player?.stop();
+        _loadedOccurrence = null;
+        position = duration = Duration.zero;
+        quality = null;
+      }
+      entries.removeAt(index);
+      if (index <= currentIndex) currentIndex--;
+      if (active) {
+        // Removal is an explicit skip, never a completion or a rating.
+        if (!ready) {
+          // Offline queue edits stay paused; reconnecting opens the next row.
+          currentIndex = index < entries.length ? index : -1;
+        } else if (currentIndex + 1 < entries.length || nextCursor != null) {
+          await advance();
+        } else {
+          currentIndex = -1;
+        }
+      }
+      await persist();
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    } finally {
+      busy = false;
+      update();
+    }
+  }
+
   Future<bool> prepare(QueueEntry entry, {bool retry = false}) async {
     if (!entry.song.available) {
       entry.status = 'skipped';
