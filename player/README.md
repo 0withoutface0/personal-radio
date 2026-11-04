@@ -1,6 +1,8 @@
 # Personal Radio apps
 
-One Flutter application targets Windows x64 and Android 7.0+ (API 24). Both modes are available in song search: **Autoplay** starts normal song playback followed by YouTube's returned Automix; the **radio icon** starts an explicit radio mix. Stations uses the personalized mixes discovered from your account.
+One Flutter application targets Windows x64 and Android 7.0+ (API 24). Discover offers separate **Songs**, **Artists** and **Albums** searches. The play button plays a song directly without creating radio. Artist pages show top songs, albums and singles/EPs; album pages show the ordered track list, **Play album**, and playback starting at a selected track. Song actions also offer **Autoplay** and **Start radio / mix**. Stations uses the personalized mixes discovered from your account.
+
+Browsing uses your YouTube Music catalog. Song actions include **View artist** and **View album** where those links are supplied; album artist names open their pages. All songs still pass through the conservative Tidal matcher and original lossless stream proxy. Unavailable or uncertain recordings remain visible in Queue. Direct playback creates a finite queue; it does not enable recommendations automatically. A deliberate new Play creates new occurrence IDs while resuming the current occurrence keeps its saved ID.
 
 ## Run
 

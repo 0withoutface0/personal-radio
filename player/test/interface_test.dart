@@ -30,8 +30,11 @@ void main() {
       ];
       radio.update();
       await tester.pump();
+      expect(find.byTooltip('Play song'), findsOneWidget);
+      await tester.tap(find.byTooltip('Song actions'));
+      await tester.pumpAndSettle();
       expect(find.text('Autoplay'), findsOneWidget);
-      expect(find.byTooltip('Start radio / mix'), findsOneWidget);
+      expect(find.text('Start radio / mix'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       radio.api!.close();

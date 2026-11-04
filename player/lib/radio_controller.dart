@@ -44,6 +44,10 @@ class RadioController extends ChangeNotifier {
   double volume = 80;
   Duration position = Duration.zero, duration = Duration.zero;
   List<Song> results = [];
+  List<Map<String, dynamic>> catalogResults = [];
+  String searchKind = 'songs';
+  bool searching = false;
+  int _searchRequest = 0;
   List<Map<String, dynamic>> stations = [];
   List<QueueEntry> entries = [];
   List<Map<String, dynamic>> outbox = [];
@@ -236,23 +240,31 @@ class RadioController extends ChangeNotifier {
     unawaited(refreshReport());
   }
 
-  Future<void> search(String query) async {
+  Future<void> search(String query, {String kind = 'songs'}) async {
     if (!ready || query.trim().isEmpty) return;
-    busy = true;
+    final request = ++_searchRequest;
+    searchKind = kind;
+    searching = true;
+    results = [];
+    catalogResults = [];
     error = null;
     update();
     try {
       final data = await api!.call(
-        '/api/search?q=${Uri.encodeQueryComponent(query.trim())}',
+        '/api/catalog/search?q=${Uri.encodeQueryComponent(query.trim())}&kind=$kind',
       );
-      results = (data as List)
-          .map((j) => Song(Map<String, dynamic>.from(j)))
+      if (request != _searchRequest) return;
+      catalogResults = (data['items'] as List)
+          .map((j) => Map<String, dynamic>.from(j))
           .toList();
+      if (kind == 'songs') results = catalogResults.map(Song.new).toList();
     } catch (e) {
-      fail(e);
+      if (request == _searchRequest) fail(e);
     } finally {
-      busy = false;
-      update();
+      if (request == _searchRequest) {
+        searching = false;
+        update();
+      }
     }
   }
 
@@ -417,6 +429,47 @@ class RadioController extends ChangeNotifier {
     }
   }
 
+  /// A finite catalog queue has no recommendation cursor. Each deliberate play
+  /// creates fresh occurrences; reconnecting the same occurrence keeps its ID.
+  Future<void> playSongs(
+    List<Song> songs, {
+    int startIndex = 0,
+    String? title,
+  }) async {
+    if (!ready ||
+        busy ||
+        _advancing ||
+        _opening ||
+        songs.isEmpty ||
+        startIndex < 0 ||
+        startIndex >= songs.length) {
+      return;
+    }
+    busy = true;
+    error = null;
+    update();
+    try {
+      await acquire();
+      await pause();
+      _generation++;
+      _loadedOccurrence = null;
+      mode = 'queue';
+      nextCursor = null;
+      queueTitle = title ?? songs[startIndex].title;
+      entries = songs.map(QueueEntry.new).toList();
+      currentIndex = startIndex - 1;
+      position = duration = Duration.zero;
+      quality = null;
+      await persist();
+      await advance();
+    } catch (e) {
+      fail(e);
+    } finally {
+      busy = false;
+      update();
+    }
+  }
+
   Future<void> _fetchMore() async {
     if (nextCursor == null) return;
     final generation = _generation;
@@ -435,6 +488,13 @@ class RadioController extends ChangeNotifier {
   }
 
   Future<bool> prepare(QueueEntry entry, {bool retry = false}) async {
+    if (!entry.song.available) {
+      entry.status = 'skipped';
+      entry.reason = 'Unavailable on YouTube Music';
+      await persist();
+      update();
+      return false;
+    }
     if (entry.tidal != null) return true;
     if (entry.status == 'skipped' && !retry) return false;
     final data = Map<String, dynamic>.from(
@@ -500,7 +560,7 @@ class RadioController extends ChangeNotifier {
   }
 
   Future<void> advance({bool natural = false}) async {
-    if (_advancing || !ready) return;
+    if (_advancing || _opening || !ready) return;
     _advancing = true;
     try {
       if (natural && current != null) await _event(0, completed: true);
@@ -511,7 +571,9 @@ class RadioController extends ChangeNotifier {
           await _more();
         }
         if (currentIndex + 1 >= entries.length) {
-          error = 'End of recommendations. Choose another song or station.';
+          error = mode == 'queue'
+              ? null
+              : 'End of recommendations. Choose another song or station.';
           break;
         }
         currentIndex++;

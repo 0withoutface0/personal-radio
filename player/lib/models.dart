@@ -12,6 +12,12 @@ class Song {
   List<String> get artists => List<String>.from(source['artists'] ?? const []);
   String get artist => artists.join(', ');
   String? get artwork => source['artwork'] as String?;
+  String? get albumId => source['album_id'] as String?;
+  List<Map<String, dynamic>> get artistRefs =>
+      (source['artist_refs'] as List? ?? [])
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+  bool get available => id.isNotEmpty && source['available'] != false;
   Duration get duration => Duration(
     milliseconds: ((source['duration'] as num? ?? 0) * 1000).round(),
   );

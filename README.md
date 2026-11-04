@@ -6,6 +6,7 @@ Use your own YouTube Music and Tidal subscriptions. Provider credentials stay on
 
 ## What it does
 
+- Search songs, artists and albums; browse artist releases and album track lists. Play songs or albums directly without starting radio.
 - **Autoplay:** start a song normally and follow YouTube's returned Automix recommendations.
 - **Start radio:** explicitly start a song's radio mix, or choose a personalized station from your signed-in account.
 - Preserve recommendation order and station context, prefetch tracks, and replenish saved queues across provider batches.

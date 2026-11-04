@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'catalog_view.dart';
 import 'models.dart';
 import 'radio_controller.dart';
 
@@ -353,96 +354,7 @@ class _RadioHomeState extends State<RadioHome> {
     2 => queueList(),
     _ => listening(),
   };
-  Widget discover() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      heading(
-        'Tune in',
-        'Where do we go next?',
-        'Choose a song. Let your taste take it from there.',
-      ),
-      TextField(
-        controller: search,
-        focusNode: focus,
-        textInputAction: TextInputAction.search,
-        onSubmitted: r.search,
-        decoration: InputDecoration(
-          hintText: 'Search songs or artists',
-          prefixIcon: const Icon(Icons.search),
-          suffixIcon: IconButton(
-            onPressed: () => r.search(search.text),
-            icon: const Icon(Icons.arrow_forward),
-          ),
-        ),
-      ),
-      const SizedBox(height: 20),
-      if (r.busy) const LinearProgressIndicator(minHeight: 2),
-      Expanded(
-        child: r.results.isEmpty
-            ? const Center(
-                child: Text(
-                  'Find a song to start Autoplay or radio.',
-                  style: TextStyle(color: Colors.white38),
-                ),
-              )
-            : ListView.separated(
-                itemCount: r.results.length,
-                separatorBuilder: (_, _) =>
-                    const Divider(color: Colors.white10, height: 1),
-                itemBuilder: (context, i) {
-                  final song = r.results[i];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Row(
-                      children: [
-                        artwork(song, 48),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                song.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                song.artist,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white54,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton.tonal(
-                          onPressed: r.busy ? null : () => r.start(song: song),
-                          child: const Text('Autoplay'),
-                        ),
-                        IconButton(
-                          tooltip: 'Start radio / mix',
-                          onPressed: r.busy
-                              ? null
-                              : () =>
-                                    r.start(song: song, selectedMode: 'radio'),
-                          icon: const Icon(Icons.radio_outlined),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-      ),
-    ],
-  );
+  Widget discover() => CatalogView(radio: r, search: search, focus: focus);
   Widget stationList() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -491,7 +403,11 @@ class _RadioHomeState extends State<RadioHome> {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       heading(
-        r.mode == 'autoplay' ? 'Autoplay' : 'Radio',
+        r.mode == 'queue'
+            ? 'Queue'
+            : r.mode == 'autoplay'
+            ? 'Autoplay'
+            : 'Radio',
         'Coming up',
         r.queueTitle,
       ),
