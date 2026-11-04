@@ -1,1 +1,4 @@
-<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@drawable/ic_radio_notification" />
+<!-- audio_service resolves these icons by name. On Android 13+, a missing Stop
+     icon prevents registration of the entire media session/notification. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_radio_notification,@drawable/audio_service_*" />
