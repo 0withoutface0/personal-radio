@@ -591,9 +591,13 @@ class RadioController extends ChangeNotifier {
 
   Future<void> advance({bool natural = false}) async {
     if (_advancing || _opening || !ready) return;
+    if (natural && current?.status == 'completed') return;
     _advancing = true;
     try {
-      if (natural && current != null) await _event(0, completed: true);
+      if (natural && current != null) {
+        current!.status = 'completed';
+        await _event(0, completed: true);
+      }
       await player!.pause();
       _clock.reset();
       for (int attempted = 0; attempted < 150; attempted++) {
@@ -623,10 +627,34 @@ class RadioController extends ChangeNotifier {
   }
 
   Future<void> selectEntry(int index) async {
-    if (index < 0 || index >= entries.length || _advancing) return;
-    await pause();
-    currentIndex = index - 1;
-    await advance();
+    if (index < 0 || index >= entries.length || changingQueue) return;
+    if (index == currentIndex && entries[index].status != 'completed') {
+      await play();
+      return;
+    }
+    busy = true;
+    try {
+      await pause();
+      if (index < currentIndex || entries[index].status == 'completed') {
+        _replayOccurrence(index);
+      }
+      currentIndex = index - 1;
+      await advance();
+    } finally {
+      busy = false;
+      update();
+    }
+  }
+
+  void _replayOccurrence(int index) {
+    final old = entries[index];
+    entries[index] = QueueEntry(
+      old.song,
+      tidal: old.tidal,
+      candidates: old.candidates,
+      addedByUser: old.addedByUser,
+    );
+    position = Duration.zero;
   }
 
   Future<void> correct(QueueEntry entry, int tidalId) async {
@@ -886,16 +914,26 @@ class RadioController extends ChangeNotifier {
   }
 
   Future<void> play() async {
-    if (!ready) return;
+    if (!ready || changingQueue) return;
     try {
       if (current == null) {
         if (entries.isNotEmpty) await advance();
         return;
       }
+      if (current!.status == 'completed' || player!.state.completed) {
+        if (currentIndex + 1 < entries.length || nextCursor != null) {
+          await advance();
+          return;
+        }
+        _replayOccurrence(currentIndex);
+        await persist();
+      }
       if (!await prepare(current!)) return;
       await acquire();
       _reconnects = 0;
-      if (player!.state.playlist.medias.isEmpty || player!.state.completed) {
+      if (_loadedOccurrence != current!.occurrenceId ||
+          player!.state.playlist.medias.isEmpty ||
+          player!.state.completed) {
         await _openCurrent(resume: position);
       } else {
         if (_session != null) await _session!.setActive(true);

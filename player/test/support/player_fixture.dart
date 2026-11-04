@@ -70,6 +70,7 @@ class PlayerFixture {
   final RadioController radio = RadioController(MemoryDisk());
   final FakePlayer player = FakePlayer();
   final List<http.Request> requests = [];
+  final Set<String> unmatched = {};
   Future<Map<String, dynamic>> Function(http.Request)? catalog;
   PlayerFixture() {
     radio.connected = true;
@@ -84,10 +85,16 @@ class PlayerFixture {
         Map<String, dynamic> result;
         if (path == '/api/match') {
           final source = jsonDecode(request.body);
-          result = {
-            'status': 'matched',
-            'track': {'id': 123, 'duration': 180, 'title': source['title']},
-          };
+          result = unmatched.contains(source['video_id'])
+              ? {'status': 'skipped', 'reason': 'Ambiguous'}
+              : {
+                  'status': 'matched',
+                  'track': {
+                    'id': 123,
+                    'duration': 180,
+                    'title': source['title'],
+                  },
+                };
         } else if (path == '/api/occurrences') {
           final body = jsonDecode(request.body);
           // Occurrences must be saved on disk before the (fake) server sees them.
