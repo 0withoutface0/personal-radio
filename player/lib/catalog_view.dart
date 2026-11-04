@@ -99,6 +99,21 @@ class CatalogViewState extends State<CatalogView> {
     r.search(query, kind: _kind);
   }
 
+  Future<void> _enqueue(List<Song> songs, {bool next = false}) async {
+    final count = await r.enqueue(songs, next: next);
+    if (!mounted || count == 0) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          next
+              ? '$count ${count == 1 ? 'song' : 'songs'} will play next'
+              : 'Added $count ${count == 1 ? 'song' : 'songs'} to queue',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   Widget _art(String? url, {double size = 46}) => ClipRRect(
     borderRadius: BorderRadius.circular(8),
     child: SizedBox(
@@ -179,12 +194,24 @@ class CatalogViewState extends State<CatalogView> {
           onSelected: (value) {
             if (value == 'autoplay') r.start(song: song);
             if (value == 'radio') r.start(song: song, selectedMode: 'radio');
+            if (value == 'next') _enqueue([song], next: true);
+            if (value == 'queue') _enqueue([song]);
             if (value == 'album') _open('album', song.albumId!);
             if (value.startsWith('artist:')) {
               _open('artist', value.substring(7));
             }
           },
           itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'next',
+              enabled: !r.changingQueue && song.available,
+              child: const Text('Play next'),
+            ),
+            PopupMenuItem(
+              value: 'queue',
+              enabled: !r.changingQueue && song.available,
+              child: const Text('Add to queue'),
+            ),
             PopupMenuItem(
               value: 'autoplay',
               enabled: !r.busy && song.available,
@@ -368,6 +395,20 @@ class CatalogViewState extends State<CatalogView> {
                     : () => r.playSongs(songs, title: data['title']),
                 icon: const Icon(Icons.play_arrow),
                 label: const Text('Play album'),
+              ),
+              OutlinedButton.icon(
+                onPressed: r.changingQueue || !songs.any((s) => s.available)
+                    ? null
+                    : () => _enqueue(songs, next: true),
+                icon: const Icon(Icons.playlist_play),
+                label: const Text('Play album next'),
+              ),
+              OutlinedButton.icon(
+                onPressed: r.changingQueue || !songs.any((s) => s.available)
+                    ? null
+                    : () => _enqueue(songs),
+                icon: const Icon(Icons.playlist_add),
+                label: const Text('Add album to queue'),
               ),
               for (final artist in data['artists'] as List? ?? [])
                 if (artist['id'] != null)

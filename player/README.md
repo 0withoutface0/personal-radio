@@ -6,6 +6,8 @@ Browsing uses your YouTube Music catalog. Song actions include **View artist** a
 
 ## Run
 
+**Play next** inserts immediately after the current song. Choosing Play next again puts the new selection first. **Add to queue** appends after all currently loaded tracks, before recommendation batches fetched later. Album actions insert the complete track list in album order. Neither action starts playback or changes your current radio/Autoplay station, cursor, position, or pending listening events. Queue marks these tracks **Added by you**. Each addition has a new occurrence ID, including repeated additions of the same song. An empty queue stays stopped until you select **Play queue** or a track's play button.
+
 Configure the server first using the [root setup guide](../README.md). The player does not include account credentials or an embedded server.
 
 For a local source checkout with the Python environment and Windows release already prepared, double-click `Start Personal Radio.cmd` at the repository root. It starts the local Python service if necessary and opens the Windows release. Account files remain in `data/`. The launcher pairs the app using the device token; Flutter stores it using platform secure storage.

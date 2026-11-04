@@ -411,6 +411,15 @@ class _RadioHomeState extends State<RadioHome> {
         'Coming up',
         r.queueTitle,
       ),
+      if (r.entries.isNotEmpty && r.current == null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: FilledButton.icon(
+            onPressed: r.changingQueue ? null : r.play,
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Play queue'),
+          ),
+        ),
       if (r.entries.any((entry) => entry.status == 'skipped'))
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
@@ -460,7 +469,7 @@ class _RadioHomeState extends State<RadioHome> {
                       subtitle: Text(
                         skipped
                             ? '${entry.song.artist} · Skipped\n${entry.reason}'
-                            : '${entry.song.artist}${entry.tidal != null ? ' · Matched' : ''}',
+                            : '${entry.song.artist}${entry.addedByUser ? ' · Added by you' : ''}${entry.tidal != null ? ' · Matched' : ''}',
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(

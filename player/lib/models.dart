@@ -30,6 +30,7 @@ class QueueEntry {
   String? reason;
   Map<String, dynamic>? tidal;
   List<Map<String, dynamic>> candidates;
+  final bool addedByUser;
   QueueEntry(
     this.song, {
     String? occurrenceId,
@@ -37,6 +38,7 @@ class QueueEntry {
     this.reason,
     this.tidal,
     this.candidates = const [],
+    this.addedByUser = false,
   }) : occurrenceId = occurrenceId ?? ids.v4();
   factory QueueEntry.fromJson(Map<String, dynamic> json) => QueueEntry(
     Song(Map<String, dynamic>.from(json['song'])),
@@ -49,6 +51,7 @@ class QueueEntry {
     candidates: (json['candidates'] as List? ?? [])
         .map((item) => Map<String, dynamic>.from(item))
         .toList(),
+    addedByUser: json['added_by_user'] == true,
   );
   Map<String, dynamic> toJson() => {
     'id': occurrenceId,
@@ -57,6 +60,7 @@ class QueueEntry {
     'reason': reason,
     'tidal': tidal,
     'candidates': candidates,
+    'added_by_user': addedByUser,
   };
 }
 

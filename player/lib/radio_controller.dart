@@ -60,6 +60,7 @@ class RadioController extends ChangeNotifier {
       ? entries[currentIndex]
       : null;
   bool get ready => api != null && connected;
+  bool get changingQueue => busy || _advancing || _opening;
   RadioController(this.disk);
 
   Map<String, dynamic> snapshot() => {
@@ -456,7 +457,9 @@ class RadioController extends ChangeNotifier {
       mode = 'queue';
       nextCursor = null;
       queueTitle = title ?? songs[startIndex].title;
-      entries = songs.map(QueueEntry.new).toList();
+      entries = songs
+          .map((song) => QueueEntry(song, addedByUser: true))
+          .toList();
       currentIndex = startIndex - 1;
       position = duration = Duration.zero;
       quality = null;
@@ -467,6 +470,33 @@ class RadioController extends ChangeNotifier {
     } finally {
       busy = false;
       update();
+    }
+  }
+
+  /// Insert without changing the radio generation/cursor or interrupting audio.
+  /// Next goes immediately after the current occurrence; append goes after all
+  /// currently queued tracks and before recommendation pages fetched later.
+  Future<int> enqueue(List<Song> songs, {bool next = false}) async {
+    if (!ready || changingQueue || songs.isEmpty) return 0;
+    if (entries.isEmpty && nextCursor == null) {
+      mode = 'queue';
+      queueTitle = 'Your queue';
+      currentIndex = -1;
+    }
+    final additions = songs
+        .map((song) => QueueEntry(song, addedByUser: true))
+        .toList();
+    entries.insertAll(
+      next ? (currentIndex + 1).clamp(0, entries.length) : entries.length,
+      additions,
+    );
+    try {
+      await persist();
+      update();
+      return additions.length;
+    } catch (e) {
+      fail(e);
+      return 0;
     }
   }
 
@@ -858,7 +888,10 @@ class RadioController extends ChangeNotifier {
   Future<void> play() async {
     if (!ready) return;
     try {
-      if (current == null) return;
+      if (current == null) {
+        if (entries.isNotEmpty) await advance();
+        return;
+      }
       if (!await prepare(current!)) return;
       await acquire();
       _reconnects = 0;
