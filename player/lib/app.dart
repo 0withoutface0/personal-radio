@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'catalog_view.dart';
 import 'models.dart';
 import 'radio_controller.dart';
+import 'song_actions.dart';
 
 const lime = Color(0xFFD5F887),
     ink = Color(0xFF111410),
@@ -452,49 +453,54 @@ class _RadioHomeState extends State<RadioHome> {
                   final entry = r.entries[i];
                   final active = i == r.currentIndex,
                       skipped = entry.status == 'skipped';
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 4),
-                    decoration: BoxDecoration(
-                      color: active ? lime.withValues(alpha: .09) : null,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: ListTile(
-                      leading: active
-                          ? const Icon(Icons.graphic_eq, color: lime)
-                          : skipped
-                          ? const Icon(
-                              Icons.not_interested,
-                              color: Colors.orangeAccent,
-                            )
-                          : artwork(entry.song, 36),
-                      title: Text(
-                        entry.song.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: active ? lime : null),
+                  return SongActions(
+                    radio: r,
+                    song: entry.song,
+                    onBrowse: browse,
+                    builder: (_) => Container(
+                      margin: const EdgeInsets.only(bottom: 4),
+                      decoration: BoxDecoration(
+                        color: active ? lime.withValues(alpha: .09) : null,
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      subtitle: Text(
-                        skipped
-                            ? '${entry.song.artist} · Skipped\n${entry.reason}'
-                            : '${entry.song.artist}${entry.addedByUser ? ' · Added by you' : ''}${entry.tidal != null ? ' · Matched' : ''}',
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 12,
+                      child: ListTile(
+                        leading: active
+                            ? const Icon(Icons.graphic_eq, color: lime)
+                            : skipped
+                            ? const Icon(
+                                Icons.not_interested,
+                                color: Colors.orangeAccent,
+                              )
+                            : artwork(entry.song, 36),
+                        title: Text(
+                          entry.song.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: active ? lime : null),
                         ),
+                        subtitle: Text(
+                          skipped
+                              ? '${entry.song.artist} · Skipped\n${entry.reason}'
+                              : '${entry.song.artist}${entry.addedByUser ? ' · Added by you' : ''}${entry.tidal != null ? ' · Matched' : ''}',
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 12,
+                          ),
+                        ),
+                        trailing: skipped
+                            ? IconButton(
+                                tooltip: 'Save a recording correction',
+                                icon: const Icon(Icons.edit_outlined, size: 18),
+                                onPressed: () => correct(entry),
+                              )
+                            : IconButton(
+                                tooltip: 'Play this occurrence',
+                                icon: const Icon(Icons.play_arrow),
+                                onPressed: () => r.selectEntry(i),
+                              ),
                       ),
-                      trailing: skipped
-                          ? IconButton(
-                              tooltip: 'Save a recording correction',
-                              icon: const Icon(Icons.edit_outlined, size: 18),
-                              onPressed: () => correct(entry),
-                            )
-                          : IconButton(
-                              tooltip: 'Play this occurrence',
-                              icon: const Icon(Icons.play_arrow),
-                              onPressed: () => r.selectEntry(i),
-                            ),
                     ),
                   );
                 },
@@ -679,147 +685,134 @@ class _RadioHomeState extends State<RadioHome> {
     );
   }
 
-  Widget nowPlaying({VoidCallback? dismiss}) => Card(
-    margin: EdgeInsets.zero,
-    child: SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'NOW PLAYING',
-                  style: TextStyle(
-                    color: Colors.white38,
-                    fontSize: 10,
-                    letterSpacing: 2,
-                  ),
-                ),
-              ),
-              if (r.current != null &&
-                  (r.current!.song.albumId != null ||
-                      r.current!.song.artistRefs.any((a) => a['id'] != null)))
-                PopupMenuButton<String>(
-                  tooltip: 'Browse this song',
-                  onSelected: (value) {
-                    dismiss?.call();
-                    changeTab(0);
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (!mounted) return;
-                      final split = value.indexOf(':');
-                      catalogKey.currentState?.browse(
-                        value.substring(0, split),
-                        value.substring(split + 1),
-                      );
-                    });
-                  },
-                  itemBuilder: (_) => [
-                    if (r.current!.song.albumId != null)
-                      PopupMenuItem(
-                        value: 'album:${r.current!.song.albumId}',
-                        child: const Text('View album'),
-                      ),
-                    for (final artist in r.current!.song.artistRefs)
-                      if (artist['id'] != null)
-                        PopupMenuItem(
-                          value: 'artist:${artist['id']}',
-                          child: Text('View artist: ${artist['name']}'),
-                        ),
-                  ],
-                ),
-            ],
-          ),
-          const SizedBox(height: 26),
-          LayoutBuilder(
-            builder: (_, c) => artwork(r.current?.song, c.maxWidth),
-          ),
-          const SizedBox(height: 26),
-          Text(
-            r.current?.song.title ?? 'A little room for discovery.',
-            style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            r.current?.song.artist ?? 'Choose a song to begin.',
-            style: const TextStyle(color: Colors.white54, height: 1.5),
-          ),
-          const SizedBox(height: 22),
-          quality(),
-          if (r.current != null) ...[
-            const SizedBox(height: 18),
+  void browse(String kind, String id) {
+    changeTab(0);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) catalogKey.currentState?.browse(kind, id);
+    });
+  }
+
+  Widget nowPlaying({VoidCallback? dismiss}) => SongActions(
+    radio: r,
+    song: r.current?.song,
+    buttonTooltip: 'Now playing options',
+    onBrowse: (kind, id) {
+      dismiss?.call();
+      browse(kind, id);
+    },
+    builder: (menuButton) => Card(
+      margin: EdgeInsets.zero,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Row(
               children: [
-                IconButton(
-                  tooltip: r.currentRating?.value == 'LIKE'
-                      ? 'Remove like from both services'
-                      : 'Like on YouTube Music and Tidal',
-                  isSelected: r.currentRating?.value == 'LIKE',
-                  color: r.currentRating?.value == 'LIKE'
-                      ? lime
-                      : Colors.white70,
-                  onPressed: r.ready && r.current!.tidal != null
-                      ? () => r.rate('LIKE')
-                      : null,
-                  icon: const Icon(Icons.thumb_up_outlined),
-                  selectedIcon: const Icon(Icons.thumb_up),
-                ),
-                IconButton(
-                  tooltip: r.currentRating?.value == 'DISLIKE'
-                      ? 'Remove dislike'
-                      : 'Dislike on YouTube Music',
-                  isSelected: r.currentRating?.value == 'DISLIKE',
-                  color: r.currentRating?.value == 'DISLIKE'
-                      ? lime
-                      : Colors.white70,
-                  onPressed: r.ready && r.current!.tidal != null
-                      ? () => r.rate('DISLIKE')
-                      : null,
-                  icon: const Icon(Icons.thumb_down_outlined),
-                  selectedIcon: const Icon(Icons.thumb_down),
-                ),
-                const Spacer(),
-                Text(
-                  timeLabel(r.duration),
-                  style: const TextStyle(color: Colors.white38),
-                ),
-              ],
-            ),
-            if (r.currentRating != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 2, 0, 8),
-                child: Tooltip(
-                  message: r.currentRating!.details,
+                const Expanded(
                   child: Text(
-                    r.currentRating!.label,
+                    'NOW PLAYING',
                     style: TextStyle(
-                      fontSize: 11,
-                      height: 1.4,
-                      color: r.currentRating!.uncertain
-                          ? Colors.orangeAccent
-                          : Colors.white54,
+                      color: Colors.white38,
+                      fontSize: 10,
+                      letterSpacing: 2,
                     ),
                   ),
                 ),
-              ),
-            seekBar(),
-          ],
-          const SizedBox(height: 14),
-          const Divider(color: Colors.white10),
-          const SizedBox(height: 14),
-          Text(
-            r.queueTitle,
-            style: const TextStyle(
-              color: Colors.white38,
-              fontSize: 12,
-              height: 1.6,
+                menuButton,
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 26),
+            LayoutBuilder(
+              builder: (_, c) => artwork(r.current?.song, c.maxWidth),
+            ),
+            const SizedBox(height: 26),
+            Text(
+              r.current?.song.title ?? 'A little room for discovery.',
+              style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              r.current?.song.artist ?? 'Choose a song to begin.',
+              style: const TextStyle(color: Colors.white54, height: 1.5),
+            ),
+            const SizedBox(height: 22),
+            quality(),
+            if (r.current != null) ...[
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: r.currentRating?.value == 'LIKE'
+                        ? 'Remove like from both services'
+                        : 'Like on YouTube Music and Tidal',
+                    isSelected: r.currentRating?.value == 'LIKE',
+                    color: r.currentRating?.value == 'LIKE'
+                        ? lime
+                        : Colors.white70,
+                    onPressed: r.ready && r.current!.tidal != null
+                        ? () => r.rate('LIKE')
+                        : null,
+                    icon: const Icon(Icons.thumb_up_outlined),
+                    selectedIcon: const Icon(Icons.thumb_up),
+                  ),
+                  IconButton(
+                    tooltip: r.currentRating?.value == 'DISLIKE'
+                        ? 'Remove dislike'
+                        : 'Dislike on YouTube Music',
+                    isSelected: r.currentRating?.value == 'DISLIKE',
+                    color: r.currentRating?.value == 'DISLIKE'
+                        ? lime
+                        : Colors.white70,
+                    onPressed: r.ready && r.current!.tidal != null
+                        ? () => r.rate('DISLIKE')
+                        : null,
+                    icon: const Icon(Icons.thumb_down_outlined),
+                    selectedIcon: const Icon(Icons.thumb_down),
+                  ),
+                  const Spacer(),
+                  Text(
+                    timeLabel(r.duration),
+                    style: const TextStyle(color: Colors.white38),
+                  ),
+                ],
+              ),
+              if (r.currentRating != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 2, 0, 8),
+                  child: Tooltip(
+                    message: r.currentRating!.details,
+                    child: Text(
+                      r.currentRating!.label,
+                      style: TextStyle(
+                        fontSize: 11,
+                        height: 1.4,
+                        color: r.currentRating!.uncertain
+                            ? Colors.orangeAccent
+                            : Colors.white54,
+                      ),
+                    ),
+                  ),
+                ),
+              seekBar(),
+            ],
+            const SizedBox(height: 14),
+            const Divider(color: Colors.white10),
+            const SizedBox(height: 14),
+            Text(
+              r.queueTitle,
+              style: const TextStyle(
+                color: Colors.white38,
+                fontSize: 12,
+                height: 1.6,
+              ),
+            ),
+          ],
+        ),
       ),
     ),
   );
+
   Widget seekBar() => Column(
     children: [
       Slider(
@@ -849,80 +842,91 @@ class _RadioHomeState extends State<RadioHome> {
       ),
     ],
   );
-  Widget transport(bool wide) => Container(
-    decoration: const BoxDecoration(
-      color: panel,
-      border: Border(top: BorderSide(color: Colors.white10)),
-    ),
-    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-    child: Row(
-      children: [
-        artwork(r.current!.song, 44),
-        const SizedBox(width: 12),
-        Expanded(
-          child: InkWell(
-            onTap: () => showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              builder: (sheetContext) => AnimatedBuilder(
-                animation: r,
-                builder: (_, _) => SizedBox(
-                  height: MediaQuery.sizeOf(context).height * .8,
-                  child: nowPlaying(dismiss: () => Navigator.pop(sheetContext)),
+  Widget transport(bool wide) => SongActions(
+    radio: r,
+    song: r.current!.song,
+    onBrowse: browse,
+    builder: (_) => Container(
+      decoration: const BoxDecoration(
+        color: panel,
+        border: Border(top: BorderSide(color: Colors.white10)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      child: Row(
+        children: [
+          artwork(r.current!.song, 44),
+          const SizedBox(width: 12),
+          Expanded(
+            child: InkWell(
+              onTap: () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                builder: (sheetContext) => AnimatedBuilder(
+                  animation: r,
+                  builder: (_, _) => SizedBox(
+                    height: MediaQuery.sizeOf(context).height * .8,
+                    child: nowPlaying(
+                      dismiss: () => Navigator.pop(sheetContext),
+                    ),
+                  ),
                 ),
               ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    r.current!.song.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    r.current!.song.artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                ],
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  r.current!.song.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  r.current!.song.artist,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white54, fontSize: 11),
-                ),
-              ],
+          ),
+          IconButton.filled(
+            style: IconButton.styleFrom(
+              backgroundColor: lime,
+              foregroundColor: ink,
             ),
+            tooltip: r.playing ? 'Pause' : 'Play',
+            onPressed: r.playing ? r.pause : r.play,
+            icon: r.buffering
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: ink,
+                    ),
+                  )
+                : Icon(
+                    r.playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  ),
           ),
-        ),
-        IconButton.filled(
-          style: IconButton.styleFrom(
-            backgroundColor: lime,
-            foregroundColor: ink,
+          IconButton(
+            tooltip: 'Skip without disliking',
+            onPressed: r.advance,
+            icon: const Icon(Icons.skip_next_rounded),
           ),
-          tooltip: r.playing ? 'Pause' : 'Play',
-          onPressed: r.playing ? r.pause : r.play,
-          icon: r.buffering
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: ink),
-                )
-              : Icon(
-                  r.playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                ),
-        ),
-        IconButton(
-          tooltip: 'Skip without disliking',
-          onPressed: r.advance,
-          icon: const Icon(Icons.skip_next_rounded),
-        ),
-        if (wide) ...[
-          const SizedBox(width: 24),
-          const Icon(Icons.volume_up_outlined, size: 18),
-          SizedBox(
-            width: 100,
-            child: Slider(value: r.volume, max: 100, onChanged: r.setVolume),
-          ),
+          if (wide) ...[
+            const SizedBox(width: 24),
+            const Icon(Icons.volume_up_outlined, size: 18),
+            SizedBox(
+              width: 100,
+              child: Slider(value: r.volume, max: 100, onChanged: r.setVolume),
+            ),
+          ],
         ],
-      ],
+      ),
     ),
   );
+
   Future<void> correct(QueueEntry entry) async {
     final text = TextEditingController();
     final value = await showDialog<int>(

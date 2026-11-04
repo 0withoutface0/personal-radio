@@ -117,7 +117,7 @@ void main() {
           await tester.tap(find.text('Song current'));
           await tester.pumpAndSettle();
         }
-        await tester.tap(find.byTooltip('Browse this song'));
+        await tester.tap(find.byTooltip('Now playing options'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('View album'));
         await tester.pumpAndSettle();

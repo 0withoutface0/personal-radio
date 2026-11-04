@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'models.dart';
 import 'radio_controller.dart';
+import 'song_actions.dart';
 
 class _BrowsePage {
   final String kind;
@@ -169,87 +170,46 @@ class CatalogViewState extends State<CatalogView> {
     onTap: item['id'] == null ? null : () => _open(kind, item['id']),
   );
 
-  Widget _song(
-    Song song, {
-    List<Song>? album,
-    int index = 0,
-    String? title,
-  }) => ListTile(
-    contentPadding: const EdgeInsets.symmetric(vertical: 4),
-    leading: album == null
-        ? _art(song.artwork)
-        : SizedBox(width: 24, child: Text('${index + 1}')),
-    title: Text(song.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-    subtitle: Text(
-      [
-        song.artist,
-        if (!song.available) 'Unavailable',
-        if (song.source['explicit'] == true) 'Explicit',
-        if (song.duration > Duration.zero) timeLabel(song.duration),
-      ].where((part) => part.isNotEmpty).join(' · '),
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-    ),
-    trailing: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          tooltip: 'Play song',
-          icon: const Icon(Icons.play_arrow_rounded),
-          onPressed: r.busy || !song.available
-              ? null
-              : () => r.playSongs(
-                  album ?? [song],
-                  startIndex: album == null ? 0 : index,
-                  title: title,
-                ),
+  Widget _song(Song song, {List<Song>? album, int index = 0, String? title}) =>
+      SongActions(
+        radio: r,
+        song: song,
+        onBrowse: (kind, id) => _open(kind, id),
+        builder: (menuButton) => ListTile(
+          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          leading: album == null
+              ? _art(song.artwork)
+              : SizedBox(width: 24, child: Text('${index + 1}')),
+          title: Text(song.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+          subtitle: Text(
+            [
+              song.artist,
+              if (!song.available) 'Unavailable',
+              if (song.source['explicit'] == true) 'Explicit',
+              if (song.duration > Duration.zero) timeLabel(song.duration),
+            ].where((part) => part.isNotEmpty).join(' · '),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Play song',
+                icon: const Icon(Icons.play_arrow_rounded),
+                onPressed: r.busy || !song.available
+                    ? null
+                    : () => r.playSongs(
+                        album ?? [song],
+                        startIndex: album == null ? 0 : index,
+                        title: title,
+                      ),
+              ),
+              menuButton,
+            ],
+          ),
         ),
-        PopupMenuButton<String>(
-          tooltip: 'Song actions',
-          onSelected: (value) {
-            if (value == 'autoplay') r.start(song: song);
-            if (value == 'radio') r.start(song: song, selectedMode: 'radio');
-            if (value == 'next') _enqueue([song], next: true);
-            if (value == 'queue') _enqueue([song]);
-            if (value == 'album') _open('album', song.albumId!);
-            if (value.startsWith('artist:')) {
-              _open('artist', value.substring(7));
-            }
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(
-              value: 'next',
-              enabled: !r.changingQueue && song.available,
-              child: const Text('Play next'),
-            ),
-            PopupMenuItem(
-              value: 'queue',
-              enabled: !r.changingQueue && song.available,
-              child: const Text('Add to queue'),
-            ),
-            PopupMenuItem(
-              value: 'autoplay',
-              enabled: !r.busy && song.available,
-              child: const Text('Autoplay'),
-            ),
-            PopupMenuItem(
-              value: 'radio',
-              enabled: !r.busy && song.available,
-              child: const Text('Start radio / mix'),
-            ),
-            if (song.albumId != null)
-              const PopupMenuItem(value: 'album', child: Text('View album')),
-            for (final artist in song.artistRefs)
-              if (artist['id'] != null)
-                PopupMenuItem(
-                  value: 'artist:${artist['id']}',
-                  child: Text('View artist: ${artist['name']}'),
-                ),
-          ],
-        ),
-      ],
-    ),
-  );
+      );
 
   Widget _searchView() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
