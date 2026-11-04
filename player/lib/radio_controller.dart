@@ -546,11 +546,13 @@ class RadioController extends ChangeNotifier {
         // Removal is an explicit skip, never a completion or a rating.
         if (!ready) {
           // Offline queue edits stay paused; reconnecting opens the next row.
-          currentIndex = index < entries.length ? index : -1;
+          currentIndex = entries.isEmpty ? -1 : index;
         } else if (currentIndex + 1 < entries.length || nextCursor != null) {
           await advance();
         } else {
-          currentIndex = -1;
+          // Keep the playback boundary beyond retained history. -1 means an
+          // unstarted queue and would replay those old occurrence IDs on Play.
+          currentIndex = entries.isEmpty ? -1 : entries.length;
         }
       }
       await persist();

@@ -96,6 +96,42 @@ void main() {
     },
   );
 
+  for (final offline in [false, true]) {
+    test(
+      'removing the final current row preserves history without replay (offline=$offline)',
+      () async {
+        final r = f.radio;
+        await r.playSongs([song('old'), song('last')]);
+        await r.prefetch();
+        await r.advance();
+        final oldId = r.entries.first.occurrenceId;
+        if (offline) r.connected = false;
+        await r.removeOccurrence(r.current!.occurrenceId);
+        expect(r.current, isNull);
+        expect(r.currentIndex, r.entries.length);
+        r.connected = true;
+        final opens = f.player.opened.length;
+        final created = f.requests
+            .where((q) => q.url.path == '/api/occurrences')
+            .length;
+        await r.play();
+        expect(f.player.opened.length, opens);
+        expect(
+          f.requests.where((q) => q.url.path == '/api/occurrences').length,
+          created,
+        );
+        expect(r.entries.single.occurrenceId, oldId);
+        expect((await r.disk.load())['index'], r.entries.length);
+        await r.enqueue([song('new')]);
+        final nextId = r.entries.last.occurrenceId;
+        await r.play();
+        expect(r.current!.occurrenceId, nextId);
+        expect(r.current!.song.id, 'new');
+        expect(r.outbox, isEmpty);
+      },
+    );
+  }
+
   test(
     'offline removal of current selects the next row without playing',
     () async {

@@ -419,7 +419,7 @@ class _RadioHomeState extends State<RadioHome> {
         'Coming up',
         r.queueTitle,
       ),
-      if (r.entries.isNotEmpty && r.current == null)
+      if (r.entries.isNotEmpty && r.currentIndex < 0)
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: FilledButton.icon(
