@@ -121,7 +121,19 @@ void main() {
     await radio.disk.settled;
     radio.api?.close();
     radio.dispose();
-    await temporary.delete(recursive: true);
+    for (var attempt = 0; ; attempt++) {
+      try {
+        await temporary.delete(recursive: true);
+        break;
+      } on FileSystemException catch (e) {
+        // Windows may briefly retain a deleted file's directory entry after
+        // all Dart writes have closed. Retry only that transient OS error.
+        if (!Platform.isWindows || e.osError?.errorCode != 145 || attempt >= 4) {
+          rethrow;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
   });
 
   test(
