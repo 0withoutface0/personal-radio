@@ -357,6 +357,29 @@ class Providers:
             # None is allowed by ytmusicapi, and is not proof the rating was rejected.
             return result
 
+    def set_tidal_favorite(self, track_id, favorite):
+        with self.lock:
+            session = self.td()
+            try:
+                favorites = session.user.favorites
+                action = favorites.add_track if favorite else favorites.remove_track
+                return action(str(track_id))
+            finally:
+                session.save_session_to_file(self.settings.tidal_file)
+
+    def check_tidal_favorite(self, track_id, favorite):
+        # Search the collection rather than the catalog: streaming availability and
+        # favoriting are separate. A failed page read must not be treated as absence.
+        offset = 0
+        while True:
+            with self.lock:
+                tracks = self.td().user.favorites.tracks(limit=100, offset=offset)
+            if any(int(track.id) == int(track_id) for track in tracks):
+                return favorite
+            if len(tracks) < 100:
+                return not favorite
+            offset += len(tracks)
+
     def check_rating(self, video_id, value):
         with self.lock:
             # get_watch_playlist's INDIFFERENT is explicitly ambiguous in upstream docs.

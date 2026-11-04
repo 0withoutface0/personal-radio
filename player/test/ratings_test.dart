@@ -29,7 +29,10 @@ class RatingFixture {
   final RadioController radio;
   final List<Map<String, dynamic>> writes = [];
   final List<Map<String, dynamic>> submissions = [];
-  bool offline = false, uncertain = false;
+  bool offline = false,
+      uncertain = false,
+      tidalPending = false,
+      youtubeUncertain = false;
   RatingFixture(this.radio) {
     radio.connected = true;
     radio.entries = [
@@ -66,7 +69,7 @@ class RatingFixture {
               'kind': 'rating:${body['id']}',
               'video_id': 'song',
               'value': body['value'],
-              'state': uncertain
+              'state': uncertain || youtubeUncertain
                   ? 'uncertain'
                   : body['value'] == 'LIKE'
                   ? 'visible'
@@ -76,6 +79,23 @@ class RatingFixture {
                   : 'Request acknowledged',
               'created': (saved['ratings']['song'] as Map)['created'],
             });
+            if (body.containsKey('tidal_favorite')) {
+              submissions.add({
+                'id': 'tidal-${body['id']}',
+                'kind': 'tidal_favorite:${body['id']}',
+                'provider': 'tidal',
+                'video_id': 'song',
+                'tidal_id': 1,
+                'value': body['tidal_favorite'] ? 'LIKE' : 'INDIFFERENT',
+                'state': uncertain
+                    ? 'uncertain'
+                    : tidalPending
+                    ? 'pending'
+                    : 'visible',
+                'detail': 'Tidal favorite checked',
+                'created': (saved['ratings']['song'] as Map)['created'],
+              });
+            }
           }
           return http.Response('{"queued":true}', 200);
         }
@@ -112,6 +132,8 @@ void main() {
       expect(radio.currentRating!.state, 'queued');
       await pending;
       expect(radio.currentRating!.state, 'visible');
+      expect(radio.currentRating!.tidalState, 'visible');
+      expect(radio.currentRating!.label, contains('Liked on Tidal'));
       await radio.rate('LIKE');
       expect(radio.currentRating!.value, 'INDIFFERENT');
       await radio.rate('DISLIKE');
@@ -123,6 +145,11 @@ void main() {
         'DISLIKE',
       ]);
       expect(fixture.writes.map((r) => r['id']).toSet().length, 3);
+      expect(fixture.writes.map((r) => r['tidal_favorite']).toList(), [
+        true,
+        false,
+        null,
+      ]);
       expect(radio.outbox, isEmpty);
       final restored = await radio.disk.load();
       radio.restoreRatings(restored['ratings']);
@@ -165,6 +192,49 @@ void main() {
     await radio.sync();
     expect(fixture.writes.length, 1);
   });
+
+  test(
+    'YouTube success keeps Tidal pending and restores its separate status',
+    () async {
+      fixture.tidalPending = true;
+      await radio.rate('LIKE');
+      expect(radio.currentRating!.state, 'visible');
+      expect(radio.currentRating!.tidalState, 'pending');
+      expect(radio.currentRating!.label, contains('Liked on YouTube Music'));
+      expect(radio.currentRating!.label, contains('Tidal: sending'));
+      expect(radio.currentRating!.needsStatus, true);
+      radio.restoreRatings((await radio.disk.load())['ratings']);
+      expect(radio.currentRating!.tidalState, 'pending');
+      expect(radio.currentRating!.tidalId, 1);
+      final event = radio.currentRating!.eventId;
+      radio.mergeRatings([
+        {
+          'kind': 'tidal_favorite:older-event',
+          'video_id': 'song',
+          'tidal_id': 1,
+          'value': 'INDIFFERENT',
+          'state': 'visible',
+        },
+      ]);
+      expect(radio.currentRating!.eventId, event);
+      expect(radio.currentRating!.tidalState, 'pending');
+    },
+  );
+
+  test(
+    'Tidal success is shown even when the YouTube outcome is uncertain',
+    () async {
+      fixture.youtubeUncertain = true;
+      await radio.rate('LIKE');
+      expect(radio.currentRating!.state, 'uncertain');
+      expect(radio.currentRating!.tidalState, 'visible');
+      expect(radio.currentRating!.label, contains('check YouTube Music'));
+      expect(radio.currentRating!.label, contains('Liked on Tidal'));
+      expect(radio.currentRating!.uncertain, true);
+      await radio.sync();
+      expect(fixture.writes.length, 1);
+    },
+  );
 
   test(
     'existing server ratings restore the selected song across occurrences',
@@ -232,14 +302,21 @@ void main() {
       (widget) => widget is IconButton && widget.tooltip == tooltip,
     );
     await tester.pumpWidget(RadioApp(radio: radio));
-    await tester.tap(button('Like on YouTube Music'));
-    await tester.pumpAndSettle();
-    expect(tester.widget<IconButton>(button('Remove like')).isSelected, true);
-    expect(find.text('Liked on YouTube Music'), findsOneWidget);
-    await tester.tap(button('Remove like'));
+    await tester.tap(button('Like on YouTube Music and Tidal'));
     await tester.pumpAndSettle();
     expect(
-      tester.widget<IconButton>(button('Like on YouTube Music')).isSelected,
+      tester
+          .widget<IconButton>(button('Remove like from both services'))
+          .isSelected,
+      true,
+    );
+    expect(find.text('Liked on YouTube Music\nLiked on Tidal'), findsOneWidget);
+    await tester.tap(button('Remove like from both services'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<IconButton>(button('Like on YouTube Music and Tidal'))
+          .isSelected,
       false,
     );
     await tester.tap(button('Dislike on YouTube Music'));

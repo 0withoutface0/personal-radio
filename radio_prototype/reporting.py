@@ -18,7 +18,10 @@ class Reporter:
                     continue
                 # Preflight failures have not sent any mutation and remain safely pending.
                 try:
-                    self.providers.yt()
+                    if row["provider"] == "tidal":
+                        self.providers.td()
+                    else:
+                        self.providers.yt()
                     baseline = (
                         [x.get("videoId") for x in self.providers.history()]
                         if row["kind"] == "history"
@@ -30,12 +33,23 @@ class Reporter:
                         if isinstance(error, ProviderUnavailable)
                         else f"Account unavailable ({type(error).__name__})"
                     )
-                    self.store.outcome(row["id"], "pending", detail)
+                    self.store.outcome(row["id"], "pending", detail, expected_state="pending")
                     continue
                 if not self.store.claim(row["id"], baseline):
                     continue
                 try:
-                    if row["kind"] == "history":
+                    if row["provider"] == "tidal":
+                        accepted = self.providers.set_tidal_favorite(
+                            row["tidal_id"], row["value"] == "LIKE"
+                        )
+                        if not accepted:
+                            self.store.outcome(
+                                row["id"],
+                                "uncertain",
+                                "Tidal did not acknowledge; check without resending",
+                            )
+                            continue
+                    elif row["kind"] == "history":
                         status = self.providers.submit_history(row["video_id"])
                         if status != 204:
                             self.store.outcome(
@@ -64,7 +78,21 @@ class Reporter:
         history = None
         for row in rows:
             try:
-                if row["kind"] == "history":
+                if row["provider"] == "tidal":
+                    if self.providers.check_tidal_favorite(row["tidal_id"], row["value"] == "LIKE"):
+                        detail = (
+                            "Favorite visible on Tidal"
+                            if row["value"] == "LIKE"
+                            else "Removal from Tidal favorites verified"
+                        )
+                        self.store.outcome(row["id"], "visible", detail)
+                    else:
+                        self.store.outcome(
+                            row["id"],
+                            row["state"],
+                            "Favorite state unverified; check Tidal directly",
+                        )
+                elif row["kind"] == "history":
                     if history is None:
                         history = self.providers.history()
                     visible = any(x.get("videoId") == row["video_id"] for x in history)

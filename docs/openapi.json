@@ -1249,6 +1249,17 @@
           "value": {
             "type": "string",
             "title": "Value"
+          },
+          "tidal_favorite": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tidal Favorite"
           }
         },
         "type": "object",

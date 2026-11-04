@@ -13,6 +13,7 @@ Use your own YouTube Music and Tidal subscriptions. Provider credentials stay on
 - Resolve music videos through YouTube's audio counterpart when supplied, or matching official-song metadata, so video introductions do not cause false duration mismatches. Review ambiguous Tidal candidates and retry skipped matches directly in the queue.
 - Request Hi-Res lossless first, with standard lossless as the fallback. Proxy the original FLAC audio without lossy conversion, and display measured source quality when verification succeeds.
 - Play, pause, seek, skip, like and dislike. Android includes background playback and media controls through `audio_service`.
+- Like a song on both YouTube Music and Tidal. Each service has its own durable submission and status; clearing a Like removes it from both.
 - Measure actual listening time and keep durable local totals, top songs and artist statistics. Eligible plays and explicit ratings are sent to YouTube on a best-effort basis, with uncertain results shown separately.
 
 Autoplay and Start radio use different request paths. Independently created sessions can return different recommendations from the YouTube website, even for the same seed song.
@@ -65,7 +66,7 @@ For phone access, configure a private Tailscale HTTPS reverse proxy to `127.0.0.
 
 Each queued occurrence and playback event has a stable UUID. Clients persist events before sending, so retries cannot duplicate local listening records. Pauses, buffering and seek jumps add no listening time. A skip does not become a dislike.
 
-A history report becomes eligible after 30 seconds of actual listening, or natural completion of a shorter track with essentially all of it heard. Explicit likes, dislikes and rating clearing are separate actions. Pending, acknowledged, visible and uncertain submissions remain distinct; ambiguous provider writes are reconciled through reads and never blindly resubmitted.
+A history report becomes eligible after 30 seconds of actual listening, or natural completion of a shorter track with essentially all of it heard. A Like rates the original YouTube recommendation and favorites its matched Tidal recording. Clearing that Like removes both; changing a Like to Dislike also removes the Tidal favorite, while the dislike itself goes to YouTube. A standalone dislike leaves existing Tidal favorites alone. Pending, acknowledged, visible and uncertain submissions remain distinct for each provider; ambiguous writes are reconciled through reads and never blindly resubmitted. New explicit actions replace older unsent choices. Existing historical likes are not automatically copied between accounts.
 
 YouTube history visibility does not prove that a particular repeat occurrence was counted. Official [Recap eligibility](https://support.google.com/youtubemusic/answer/11418178) for community-library reports remains unverified. Local listening statistics are retained regardless.
 

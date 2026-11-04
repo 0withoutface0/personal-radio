@@ -227,4 +227,6 @@ def test_explicit_rating_changes_have_distinct_retry_safe_event_ids(api):
         ).status_code
         == 200
     )
-    assert len(app.state.store.submissions()) == 2
+    rows = app.state.store.submissions()
+    assert len(rows) == 4
+    assert {row["provider"] for row in rows} == {"youtube", "tidal"}

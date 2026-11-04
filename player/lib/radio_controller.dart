@@ -321,7 +321,39 @@ class RadioController extends ChangeNotifier {
         created: created,
         state: row['state'],
         detail: row['detail'] ?? '',
+        tidalState: local?.eventId == eventId ? local?.tidalState : null,
+        tidalValue: local?.eventId == eventId ? local?.tidalValue : null,
+        tidalDetail: local?.eventId == eventId ? local?.tidalDetail : null,
+        tidalId: local?.eventId == eventId ? local?.tidalId : null,
       );
+    }
+    for (final row in submissions) {
+      final kind = row['kind'] as String;
+      if (kind != 'tidal_favorite' && !kind.startsWith('tidal_favorite:')) {
+        continue;
+      }
+      final local = ratings[row['video_id']];
+      if (local == null ||
+          outbox.any((event) => event['body']['id'] == local.eventId)) {
+        continue;
+      }
+      String? eventId;
+      if (kind.startsWith('tidal_favorite:')) {
+        eventId = kind.substring('tidal_favorite:'.length);
+      } else {
+        for (final youtube in submissions) {
+          if (youtube['kind'] == 'rating' &&
+              youtube['occurrence_id'] == row['occurrence_id']) {
+            eventId = youtube['id'];
+            break;
+          }
+        }
+      }
+      if (local.eventId != eventId) continue;
+      local.tidalState = row['state'];
+      local.tidalValue = row['value'];
+      local.tidalDetail = row['detail'] ?? '';
+      local.tidalId = row['tidal_id'];
     }
   }
 
@@ -647,12 +679,24 @@ class RadioController extends ChangeNotifier {
     if (!['LIKE', 'DISLIKE'].contains(value)) return;
     final previous = ratings[entry.song.id];
     final selected = previous?.value == value ? 'INDIFFERENT' : value;
+    final bool? tidalFavorite = selected == 'LIKE'
+        ? true
+        : previous?.value == 'LIKE'
+        ? false
+        : null;
     final eventId = ids.v4();
     final rating = SongRating(
       eventId: eventId,
       value: selected,
       created: DateTime.now().toUtc().toIso8601String(),
       state: 'queued',
+      tidalState: tidalFavorite == null ? null : 'queued',
+      tidalValue: tidalFavorite == null
+          ? null
+          : tidalFavorite
+          ? 'LIKE'
+          : 'INDIFFERENT',
+      tidalId: tidalFavorite == null ? null : entry.tidal!['id'] as int,
     );
     ratings[entry.song.id] = rating;
     final event = <String, dynamic>{
@@ -662,6 +706,7 @@ class RadioController extends ChangeNotifier {
         'id': eventId,
         'occurrence_id': entry.occurrenceId,
         'value': selected,
+        'tidal_favorite': ?tidalFavorite,
       },
     };
     outbox.add(event);
@@ -712,7 +757,10 @@ class RadioController extends ChangeNotifier {
         if (event['path'] == '/api/ratings') {
           sentRating = true;
           for (final rating in ratings.values) {
-            if (rating.eventId == event['body']['id']) rating.state = 'pending';
+            if (rating.eventId == event['body']['id']) {
+              rating.state = 'pending';
+              if (rating.tidalState == 'queued') rating.tidalState = 'pending';
+            }
           }
         }
         outbox.removeWhere((row) => row['id'] == event['id']);

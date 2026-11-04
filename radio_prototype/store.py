@@ -152,13 +152,15 @@ class Store:
             ),
         )
 
-    def schedule_rating(self, occurrence_id, rating, event_id=None):
+    def schedule_rating(self, occurrence_id, rating, event_id=None, *, tidal_favorite=None):
         if rating not in ("LIKE", "DISLIKE", "INDIFFERENT"):
             raise ValueError("Unsupported rating")
+        if tidal_favorite is not None and (rating == "LIKE") != tidal_favorite:
+            raise ValueError("Tidal can only be favorited by an explicit Like")
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
-                "SELECT video_id FROM occurrences WHERE id=?", (occurrence_id,)
+                "SELECT video_id,tidal_id FROM occurrences WHERE id=?", (occurrence_id,)
             ).fetchone()
             if not row or not row["video_id"]:
                 raise ValueError("Occurrence needs a YouTube video ID")
@@ -169,7 +171,46 @@ class Store:
             ).fetchone()
             if old and old["value"] != rating:
                 raise ValueError("Rating event ID reused with a different value")
+            tidal_kind = "tidal_favorite:" + event_id if event_id else "tidal_favorite"
+            if old:
+                if tidal_favorite is not None:
+                    saved = db.execute(
+                        "SELECT value FROM submissions WHERE occurrence_id=? AND kind=?",
+                        (occurrence_id, tidal_kind),
+                    ).fetchone()
+                    expected = "LIKE" if tidal_favorite else "INDIFFERENT"
+                    if not saved or saved["value"] != expected:
+                        raise ValueError("Rating event ID reused with different Tidal intent")
+                return
+            previous = db.execute(
+                "SELECT s.value FROM submissions s JOIN occurrences o ON o.id=s.occurrence_id "
+                "WHERE o.video_id=? AND (s.kind='rating' OR s.kind LIKE 'rating:%') "
+                "ORDER BY s.created DESC, s.rowid DESC LIMIT 1",
+                (row["video_id"],),
+            ).fetchone()
+            desired = tidal_favorite
+            if desired is None:
+                if rating == "LIKE":
+                    desired = True
+                elif previous and previous["value"] == "LIKE":
+                    desired = False
+            # A newer explicit choice replaces unsent older work for the same provider
+            # target. Sending/uncertain work is retained and never blindly retried.
+            db.execute(
+                "UPDATE submissions SET state='superseded',detail=?,updated=? "
+                "WHERE state='pending' AND (kind='rating' OR kind LIKE 'rating:%') "
+                "AND occurrence_id IN (SELECT id FROM occurrences WHERE video_id=?)",
+                ("Replaced by a newer explicit rating", now(), row["video_id"]),
+            )
             self._schedule(db, occurrence_id, kind, rating)
+            if desired is not None:
+                db.execute(
+                    "UPDATE submissions SET state='superseded',detail=?,updated=? "
+                    "WHERE state='pending' AND (kind='tidal_favorite' OR kind LIKE 'tidal_favorite:%') "
+                    "AND occurrence_id IN (SELECT id FROM occurrences WHERE tidal_id=?)",
+                    ("Replaced by a newer explicit favorite choice", now(), row["tidal_id"]),
+                )
+                self._schedule(db, occurrence_id, tidal_kind, "LIKE" if desired else "INDIFFERENT")
 
     def lease(self, device_id, force=False, release=False):
         with self.connect() as db:
@@ -195,7 +236,10 @@ class Store:
             return [
                 dict(row)
                 for row in db.execute(
-                    "SELECT s.*, o.video_id FROM submissions s JOIN occurrences o "
+                    "SELECT s.*, o.video_id, o.tidal_id, "
+                    "CASE WHEN s.kind='tidal_favorite' OR s.kind LIKE 'tidal_favorite:%' "
+                    "THEN 'tidal' ELSE 'youtube' END provider "
+                    "FROM submissions s JOIN occurrences o "
                     "ON o.id=s.occurrence_id ORDER BY s.created"
                 )
             ]
@@ -211,11 +255,12 @@ class Store:
                 == 1
             )
 
-    def outcome(self, submission_id, state, detail):
+    def outcome(self, submission_id, state, detail, *, expected_state=None):
         with self.connect() as db:
             db.execute(
-                "UPDATE submissions SET state=?, detail=?, updated=? WHERE id=?",
-                (state, detail, now(), submission_id),
+                "UPDATE submissions SET state=?, detail=?, updated=? WHERE id=? "
+                "AND (? IS NULL OR state=?)",
+                (state, detail, now(), submission_id, expected_state, expected_state),
             )
 
     def evidence(self, kind, status, details):

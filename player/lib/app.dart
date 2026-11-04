@@ -674,7 +674,11 @@ class _RadioHomeState extends State<RadioHome> {
                 color: row['state'] == 'uncertain' ? Colors.orangeAccent : lime,
               ),
               title: Text(
-                '${row['kind'].toString().startsWith('rating') ? 'Rating' : 'Play history'} · ${row['state']}',
+                '${row['provider'] == 'tidal' || row['kind'].toString().startsWith('tidal_favorite')
+                    ? 'Tidal favorite'
+                    : row['kind'].toString().startsWith('rating')
+                    ? 'YouTube rating'
+                    : 'YouTube history'} · ${row['state']}',
               ),
               subtitle: Text(row['detail'] ?? ''),
             ),
@@ -780,8 +784,8 @@ class _RadioHomeState extends State<RadioHome> {
               children: [
                 IconButton(
                   tooltip: r.currentRating?.value == 'LIKE'
-                      ? 'Remove like'
-                      : 'Like on YouTube Music',
+                      ? 'Remove like from both services'
+                      : 'Like on YouTube Music and Tidal',
                   isSelected: r.currentRating?.value == 'LIKE',
                   color: r.currentRating?.value == 'LIKE'
                       ? lime
@@ -817,13 +821,13 @@ class _RadioHomeState extends State<RadioHome> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 2, 0, 8),
                 child: Tooltip(
-                  message: r.currentRating!.detail,
+                  message: r.currentRating!.details,
                   child: Text(
                     r.currentRating!.label,
                     style: TextStyle(
                       fontSize: 11,
                       height: 1.4,
-                      color: r.currentRating!.state == 'uncertain'
+                      color: r.currentRating!.uncertain
                           ? Colors.orangeAccent
                           : Colors.white54,
                     ),

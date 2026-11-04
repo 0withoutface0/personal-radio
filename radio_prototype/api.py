@@ -70,6 +70,7 @@ class RatingInput(BaseModel):
     id: UUID | None = None
     occurrence_id: UUID
     value: str
+    tidal_favorite: bool | None = None
 
 
 class RecordingInput(BaseModel):
@@ -462,7 +463,10 @@ def create_app(settings=None, providers=None):
     @app.post("/api/ratings", dependencies=protected)
     def rating(body: RatingInput):
         store.schedule_rating(
-            str(body.occurrence_id), body.value, str(body.id) if body.id else None
+            str(body.occurrence_id),
+            body.value,
+            str(body.id) if body.id else None,
+            tidal_favorite=body.tidal_favorite,
         )
         return {"queued": True}
 

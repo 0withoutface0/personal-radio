@@ -57,12 +57,18 @@ class QueueEntry {
 class SongRating {
   final String eventId, value, created;
   String state, detail;
+  String? tidalState, tidalValue, tidalDetail;
+  int? tidalId;
   SongRating({
     required this.eventId,
     required this.value,
     required this.created,
     required this.state,
     this.detail = '',
+    this.tidalState,
+    this.tidalValue,
+    this.tidalDetail,
+    this.tidalId,
   });
   factory SongRating.fromJson(Map<String, dynamic> json) => SongRating(
     eventId: json['event_id'],
@@ -70,6 +76,10 @@ class SongRating {
     created: json['created'],
     state: json['state'],
     detail: json['detail'] ?? '',
+    tidalState: json['tidal_state'],
+    tidalValue: json['tidal_value'],
+    tidalDetail: json['tidal_detail'],
+    tidalId: json['tidal_id'],
   );
   Map<String, dynamic> toJson() => {
     'event_id': eventId,
@@ -77,6 +87,10 @@ class SongRating {
     'created': created,
     'state': state,
     'detail': detail,
+    'tidal_state': tidalState,
+    'tidal_value': tidalValue,
+    'tidal_detail': tidalDetail,
+    'tidal_id': tidalId,
   };
   String get action => switch (value) {
     'LIKE' => 'Like',
@@ -86,8 +100,24 @@ class SongRating {
   bool get needsStatus =>
       state == 'pending' ||
       state == 'sending' ||
-      (state == 'submitted' && value == 'LIKE');
-  String get label => switch (state) {
+      (state == 'submitted' && value == 'LIKE') ||
+      ['queued', 'pending', 'sending', 'submitted'].contains(tidalState);
+  bool get uncertain => state == 'uncertain' || tidalState == 'uncertain';
+  String get details =>
+      [detail, if (tidalDetail != null) 'Tidal: $tidalDetail'].join('\n');
+  String get label =>
+      tidalState == null ? youtubeLabel : '$youtubeLabel\n$tidalLabel';
+  String get tidalLabel => switch (tidalState) {
+    'queued' => 'Tidal: saved on this device · waiting to send',
+    'pending' || 'sending' => 'Tidal: sending favorite change…',
+    'visible' =>
+      tidalValue == 'LIKE' ? 'Liked on Tidal' : 'Like removed from Tidal',
+    'submitted' => 'Tidal: request sent · verification pending',
+    'uncertain' => 'Tidal: outcome uncertain · check your favorites',
+    'superseded' => 'Tidal: replaced by a newer choice',
+    _ => 'Tidal: status unavailable',
+  };
+  String get youtubeLabel => switch (state) {
     'saving' => 'Saving rating…',
     'queued' => '$action saved on this device · waiting to send',
     'pending' || 'sending' => 'Sending rating to YouTube Music…',

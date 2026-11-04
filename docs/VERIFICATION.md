@@ -1,8 +1,8 @@
 # Verification status
 
-Version 0.1.2 is an early release. The Windows executable, signed Android APK and Linux Docker image have been built. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
+Version 0.1.3 is an early release. The Windows executable, signed Android APK and Linux Docker image have been built. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
 
-Automated checks: **102 Python tests**, **18 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
+Automated checks: **115 Python tests**, **20 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
 
 | Check | Evidence / status |
 | --- | --- |
@@ -21,6 +21,7 @@ Automated checks: **102 Python tests**, **18 Flutter unit/widget tests**, clean 
 | Attribution of that specific history occurrence | Unverified because the song was already present before submission |
 | Explicit ratings | API/idempotency fixtures pass; a user confirmed a like reached YouTube; live dislike/clear verification remains open |
 | Rating feedback | Selected buttons, clearing, restart persistence, offline retries and outcome labels covered by Flutter tests |
+| Likes on both providers | Mocked writes cover independent outcomes, offline accounts, restart/idempotency, clearing and superseded choices; live Tidal favorites read verified; new live account writes were not created for tests |
 | Official Recap inclusion | Unverified independently of successful history submission |
 | Windows release | Release executable and complete DLL/assets bundle built |
 | Android release | Signed universal APK; API 24 minimum, API 36 target; ARM64, ARMv7 and x86_64 |
