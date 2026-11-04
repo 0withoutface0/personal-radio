@@ -1,11 +1,15 @@
 # Verification status
 
-Version 0.1.3 is an early release. The Windows executable, signed Android APK and Linux Docker image have been built. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
+Version 0.2.0 is an early release. The Windows executable, signed Android APK and Linux Docker image have been built. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
 
-Automated checks: **115 Python tests**, **20 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
+Automated checks: **127 Python tests**, **38 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
 
 | Check | Evidence / status |
 | --- | --- |
+| Catalog search and browsing | Live read-only song/artist/album search, artist releases and album tracks retrieved; no listening or rating writes |
+| Catalog player | Phone/desktop widget tests cover artist releases, album navigation, selected-track playback, now-playing links and Ctrl+K |
+| Queue editing | All three radio modes retain cursor, order, position, occurrence IDs and pending events across insertion/restoration; in-flight pagination covered |
+| Direct queue and replay | Finite queues, fresh replay occurrences, unavailable tracks, stale searches/pages and corrected stream identity covered with fake transport |
 | Authenticated Autoplay | Three consecutive saved pages retrieved; cursor retries stable |
 | Authenticated explicit radio | Three saved pages; mode and session preserved |
 | Personalized stations | Discovered from the signed-in account; station pagination checked |

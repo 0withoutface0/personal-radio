@@ -1,6 +1,6 @@
 # Early release acceptance
 
-Delivered implementation: one Flutter codebase for Windows and Android; separate Autoplay, explicit radio and personalized-station modes; lossless media_kit playback; Android audio_service/audio_session integration; durable queue/outbox state; server-side matching/corrections, source-quality verification, device leases and best-effort activity reporting. Release binaries and SHA-256 checksums are under `dist/`. Setup and reproducible build commands are in `player/README.md`.
+Delivered implementation (v0.2.0): one Flutter codebase for Windows and Android; song/artist/album catalog browsing, finite direct playback queues, Add to queue and Play next; separate Autoplay, explicit radio and personalized-station modes; lossless media_kit playback; Android audio_service/audio_session integration; durable queue/outbox state; server-side matching/corrections, source-quality verification, device leases and best-effort activity reporting. Release binaries and SHA-256 checksums are under `dist/`. Setup and reproducible build commands are in `player/README.md`.
 
 Remaining acceptance work:
 
@@ -13,3 +13,5 @@ Remaining acceptance work:
 One active playback lease is enforced; the prior device pauses on its next six-second heartbeat after takeover. Provider credentials remain on the server. Keep the private Android release keystore/properties backed up for future sideload updates. Do not put account files, device tokens or signing secrets in distributed app packages.
 
 Offline downloads, synchronized multiroom, Android Auto, exclusive audio output and guaranteed bit-perfect hardware playback remain outside this release.
+
+Catalog reads were checked against the signed-in YouTube account. Playback and queue editing use the same lossless stream and durable reporting paths as radio; new feature tests use fake transport/providers and create no real listening or rating activity. Install the matching server revision before the v0.2.0 clients (catalog API version 0.3.0). Existing client queue/outbox state and server SQLite records remain compatible.

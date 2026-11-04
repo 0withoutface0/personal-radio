@@ -14,6 +14,8 @@ Resuming a paused track keeps its occurrence ID and saved position. Replaying a 
 
 Configure the server first using the [root setup guide](../README.md). The player does not include account credentials or an embedded server.
 
+For v0.2.0, update the server from the same release before updating the player; catalog browsing requires server API 0.3.0. Restart the Python service after updating source, or rebuild/recreate the Docker service with `docker compose up -d --build`. Keep its persistent data directory/volume. Install the new APK over the previous APK without uninstalling to retain the device queue/outbox; the release uses the same signing key. Close Windows Personal Radio before replacing its bundle, then restart it. Existing account sessions, matching corrections, ratings, queues and listening events do not require migration.
+
 For a local source checkout with the Python environment and Windows release already prepared, double-click `Start Personal Radio.cmd` at the repository root. It starts the local Python service if necessary and opens the Windows release. Account files remain in `data/`. The launcher pairs the app using the device token; Flutter stores it using platform secure storage.
 
 For a standalone Windows install, download `PersonalRadio-Windows-x64.zip` from [Releases](https://github.com/0withoutface0/youtube-tidal-radio/releases), unzip it and run `personal_radio.exe`. Keep its DLLs, notices and asset `data` folder beside it. This asset folder is different from the server's private `data/`. In Connection settings, enter your private server origin and the contents of the server's `data/device-token.txt`. The app requires the Microsoft Visual C++ 2015-2022 x64 runtime; install Microsoft's redistributable if it is missing.
