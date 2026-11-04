@@ -1,8 +1,8 @@
 # Verification status
 
-Version 0.2.2 is an early release. The Windows executable, signed Android APK and Linux Docker image have been built. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
+Version 0.2.3 is an early release. The Windows executable, signed Android APK and Linux Docker image have been built. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
 
-Automated checks: **136 Python tests**, **58 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
+Automated checks: **136 Python tests**, **60 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
 
 | Check | Evidence / status |
 | --- | --- |

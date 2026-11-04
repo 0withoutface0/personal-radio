@@ -10,7 +10,7 @@ Browsing uses your YouTube Music catalog. Song actions include **View artist** a
 
 Right-click a song in search results, artist pages, album tracks, Queue, now playing or the bottom player bar to open its song options at the pointer. Touch users can long-press. The menu offers Play next, Add to queue, Autoplay, Start radio / mix, and the artist/album links supplied with that song. Opening or dismissing the menu leaves playback and the queue untouched. The existing overflow buttons use the same actions.
 
-Updating from v0.2.0/v0.2.1 to v0.2.2 requires only the new player bundle/APK. The server API and saved queue/outbox format are unchanged.
+Updating from v0.2.0/v0.2.1/v0.2.2 to v0.2.3 requires only the new player bundle/APK. The server API and saved queue/outbox format are unchanged.
 
 The **Now playing options** menu includes song actions and opens the linked album or credited artists. **Ctrl+K** returns to catalog search from any page. Starting a search or opening a catalog page dismisses the phone keyboard.
 
@@ -26,7 +26,7 @@ For a local source checkout with the Python environment and Windows release alre
 
 For a standalone Windows install, download `PersonalRadio-Windows-x64.zip` from [Releases](https://github.com/0withoutface0/youtube-tidal-radio/releases), unzip it and run `personal_radio.exe`. Keep its DLLs, notices and asset `data` folder beside it. This asset folder is different from the server's private `data/`. In Connection settings, enter your private server origin and the contents of the server's `data/device-token.txt`. The app requires the Microsoft Visual C++ 2015-2022 x64 runtime; install Microsoft's redistributable if it is missing.
 
-Download `PersonalRadio-Android.apk` from Releases, copy it to your phone, allow installation from the app you use to open it, and install. Connect Tailscale on the phone. In Connection settings, enter `http://YOUR_PC_TAILSCALE_IP:8765` or your private HTTPS origin, plus the device token. `localhost` on Android means the phone, not the server. The Android emulator can use `http://10.0.2.2:8765` with that host added to `RADIO_ALLOWED_HOSTS` on the server. Provider cookies and Tidal session tokens belong only on the server.
+Download `PersonalRadio-Android.apk` from Releases, copy it to your phone, allow installation from the app you use to open it, and install. Connect Tailscale on the phone. In Connection settings, enter `http://YOUR_PC_TAILSCALE_IP:8765` or your private HTTPS origin, plus the device token. `localhost` on Android means the phone, not the server. The Android emulator can use `http://10.0.2.3:8765` with that host added to `RADIO_ALLOWED_HOSTS` on the server. Provider cookies and Tidal session tokens belong only on the server.
 
 For phone access while keeping the Windows launcher on loopback, use [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve). Create the private, Git-ignored `data/server-settings.json` with your PC's actual Tailscale IP and DNS name:
 
