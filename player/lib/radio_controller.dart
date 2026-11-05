@@ -49,6 +49,10 @@ class RadioController extends ChangeNotifier {
   bool searching = false;
   int _searchRequest = 0;
   List<Map<String, dynamic>> stations = [];
+  Map<String, dynamic>? home;
+  bool homeLoading = false;
+  String? homeError;
+  int _homeRequest = 0;
   List<QueueEntry> entries = [];
   List<Map<String, dynamic>> outbox = [];
   Map<String, dynamic>? quality, report;
@@ -233,22 +237,32 @@ class RadioController extends ChangeNotifier {
     token = accessToken.trim();
     await secrets.write(key: 'device_token', value: token);
     connected = true;
+    home = null;
+    homeError = null;
+    homeLoading = false;
+    _homeRequest++;
     error = null;
     connectionMessage = 'Connected';
     await persist();
     update();
     unawaited(loadStations());
+    unawaited(loadHome());
     unawaited(refreshReport());
   }
 
   Future<void> search(String query, {String kind = 'songs'}) async {
-    if (!ready || query.trim().isEmpty) return;
+    if (!ready) return;
     final request = ++_searchRequest;
     searchKind = kind;
     searching = true;
     results = [];
     catalogResults = [];
     error = null;
+    if (query.trim().isEmpty) {
+      searching = false;
+      update();
+      return;
+    }
     update();
     try {
       final data = await api!.call(
@@ -278,6 +292,32 @@ class RadioController extends ChangeNotifier {
       update();
     } catch (e) {
       fail(e);
+    }
+  }
+
+  Future<void> loadHome({bool refresh = false}) async {
+    if (!ready || (homeLoading && !refresh)) return;
+    final client = api!;
+    final request = ++_homeRequest;
+    homeLoading = true;
+    homeError = null;
+    update();
+    try {
+      final data = Map<String, dynamic>.from(
+        await client.call('/api/home${refresh ? '?refresh=true' : ''}'),
+      );
+      if (request == _homeRequest && identical(client, api)) home = data;
+    } catch (e) {
+      if (request == _homeRequest && identical(client, api)) {
+        homeError = e is ApiFailure
+            ? e.message
+            : 'Could not refresh your YouTube Music home. Try again.';
+      }
+    } finally {
+      if (request == _homeRequest) {
+        homeLoading = false;
+        update();
+      }
     }
   }
 
@@ -382,6 +422,7 @@ class RadioController extends ChangeNotifier {
     Song? song,
     String selectedMode = 'autoplay',
     Map<String, dynamic>? station,
+    Map<String, dynamic>? homeSelection,
   }) async {
     if (!ready || busy || _advancing || _opening) return;
     busy = true;
@@ -391,16 +432,23 @@ class RadioController extends ChangeNotifier {
       await acquire();
       await pause();
       _loadedOccurrence = null;
-      final body = station != null
+      final body = homeSelection != null
+          ? {'selection_id': homeSelection['play_id']}
+          : station != null
           ? {'mode': 'station', 'playlist_id': station['id']}
           : {'mode': selectedMode, 'video_id': song!.id};
       final data = Map<String, dynamic>.from(
-        await api!.call('/api/queues', body: body),
+        await api!.call(
+          homeSelection == null ? '/api/queues' : '/api/home/play',
+          body: body,
+        ),
       );
       _generation++;
       mode = data['mode'];
       nextCursor = data['next_cursor'];
       queueTitle =
+          data['title'] ??
+          homeSelection?['title'] ??
           station?['title'] ??
           '${song!.title} · ${mode == 'autoplay' ? 'Autoplay' : 'Radio'}';
       entries = (data['tracks'] as List)

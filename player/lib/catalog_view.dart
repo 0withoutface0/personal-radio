@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'home_view.dart';
 import 'models.dart';
 import 'radio_controller.dart';
 import 'song_actions.dart';
@@ -32,11 +33,13 @@ class CatalogViewState extends State<CatalogView> {
   String _kind = 'songs';
   bool _loading = false;
   int _request = 0;
+  bool _home = true;
 
   @override
   void initState() {
     super.initState();
     _kind = r.searchKind;
+    _home = r.results.isEmpty && r.catalogResults.isEmpty;
   }
 
   void _back() => setState(() {
@@ -98,6 +101,7 @@ class CatalogViewState extends State<CatalogView> {
       _request++;
       _pages.clear();
       _loading = false;
+      _home = query.trim().isEmpty;
     });
     r.search(query, kind: _kind);
   }
@@ -214,15 +218,17 @@ class CatalogViewState extends State<CatalogView> {
   Widget _searchView() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      const Text(
-        'Find your next listen',
-        style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+      Text(
+        _home && r.results.isEmpty ? 'For you' : 'Find your next listen',
+        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
       ),
-      const SizedBox(height: 10),
-      const Text(
-        'Play a song, explore an album, or let your radio take over.',
-        style: TextStyle(color: Colors.white54),
-      ),
+      if (!_home) ...[
+        const SizedBox(height: 10),
+        const Text(
+          'Play a song, explore an album, or let your radio take over.',
+          style: TextStyle(color: Colors.white54),
+        ),
+      ],
       const SizedBox(height: 20),
       TextField(
         controller: widget.search,
@@ -243,6 +249,16 @@ class CatalogViewState extends State<CatalogView> {
       Wrap(
         spacing: 8,
         children: [
+          if (!_home)
+            ActionChip(
+              avatar: const Icon(Icons.home_outlined, size: 18),
+              label: const Text('For you'),
+              onPressed: () {
+                setState(() => _kind = 'songs');
+                widget.search.clear();
+                _search('');
+              },
+            ),
           for (final kind in ['songs', 'artists', 'albums'])
             ChoiceChip(
               label: Text(kind[0].toUpperCase() + kind.substring(1)),
@@ -257,7 +273,9 @@ class CatalogViewState extends State<CatalogView> {
       const SizedBox(height: 8),
       if (_loading || r.searching) const LinearProgressIndicator(minHeight: 2),
       Expanded(
-        child: _kind != r.searchKind
+        child: _home && _kind == 'songs' && r.results.isEmpty
+            ? HomeView(radio: r, onBrowse: browse)
+            : _kind != r.searchKind
             ? const Center(child: Text('Search your music catalog.'))
             : _kind == 'songs'
             ? r.results.isEmpty

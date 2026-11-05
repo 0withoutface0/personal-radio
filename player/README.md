@@ -99,3 +99,7 @@ flutter test integration_test/windows_live_test.dart -d windows --dart-define=RA
 ```
 
 Offline tests use fixtures and never call your provider accounts. Release packaging requires Android SDK `aapt2` and checks the notification and media control icons in the compiled APK, because these are resolved by name and can otherwise be removed by resource shrinking. `scripts/Package-Apps.ps1` copies release outputs and writes SHA-256 checksums. No account file, pairing token, signing secret, or provider URL is included in the packages.
+
+Discover opens on **For you** with your signed-in YouTube Music **Speed dial** and **Quick picks**. Speed dial uses a swipeable three-by-three grid; artist and album shortcuts open their catalog pages, and playable shortcuts use YouTube's returned play action. Quick picks offers individual song radio and the provider's **Play all** action. Song long-press/right-click menus still offer Play next, Add to queue and artist/album links. Ratings remain in now playing. Search and its **For you** button let you switch between catalog results and home recommendations.
+
+Refresh Home with the refresh button or pull down. Refreshing keeps the current queue and pending listening events intact. The server must be updated for these shelves (API version 0.4.0). When YouTube signs the server out or omits a shelf, the app explains that instead of substituting generic recommendations. A home play selection can expire after a server restart; refresh Home and select it again. Normal queues, playback events and listening totals stay durable.
