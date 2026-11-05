@@ -90,6 +90,7 @@ class Providers:
         self.settings = settings
         self.lock = threading.RLock()
         self.youtube = None
+        self._youtube_stamp = None
         self.tidal = None
         self.pending_pkce = None
         # Provider errors can include signed media URLs or authentication responses.
@@ -100,10 +101,14 @@ class Providers:
         with self.lock:
             if not self.settings.youtube_file.exists():
                 raise ProviderUnavailable("Connect YouTube Music on the local setup page")
-            if self.youtube is None:
+            stamp = self.settings.youtube_file.stat().st_mtime_ns
+            if self.youtube is None or (
+                self._youtube_stamp is not None and stamp != self._youtube_stamp
+            ):
                 session = requests.Session()
                 session.request = functools.partial(session.request, timeout=30)
                 self.youtube = YTMusic(str(self.settings.youtube_file), requests_session=session)
+            self._youtube_stamp = stamp
             return self.youtube
 
     def td(self):
@@ -141,6 +146,7 @@ class Providers:
             youtube.get_account_info()
             private_write(self.settings.youtube_file, json.dumps(auth))
             self.youtube = youtube
+            self._youtube_stamp = self.settings.youtube_file.stat().st_mtime_ns
 
     def start_pkce(self):
         with self.lock:

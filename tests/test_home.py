@@ -227,3 +227,29 @@ def test_expired_and_cross_account_targets_cannot_be_replayed(home_api):
 def test_home_requires_device_access_token(home_api, method, path, body):
     client, _, _, _, _ = home_api
     assert client.request(method, path, json=body).status_code == 401
+
+
+def test_reconnected_browser_credentials_reload_without_restarting_server(tmp_path, monkeypatch):
+    import os
+
+    import radio_prototype.providers as module
+
+    settings = Settings(tmp_path)
+    settings.youtube_file.write_text('{"fixture":"first"}', encoding="utf-8")
+    created = []
+
+    def youtube(path, *, requests_session):
+        result = object()
+        created.append(result)
+        return result
+
+    monkeypatch.setattr(module, "YTMusic", youtube)
+    providers = Providers(settings)
+    first = providers.yt()
+    assert providers.yt() is first
+    stamp = settings.youtube_file.stat().st_mtime_ns
+    settings.youtube_file.write_text('{"fixture":"reconnected"}', encoding="utf-8")
+    os.utime(settings.youtube_file, ns=(stamp + 1_000_000_000, stamp + 1_000_000_000))
+    second = providers.yt()
+    assert second is not first and providers.yt() is second
+    assert len(created) == 2
