@@ -10,7 +10,7 @@ Browsing uses your YouTube Music catalog. Song actions include **View artist** a
 
 Right-click a song in search results, artist pages, album tracks, Queue, now playing or the bottom player bar to open its song options at the pointer. Touch users can long-press. The menu offers Play next, Add to queue, Autoplay, Start radio / mix, and the artist/album links supplied with that song. Opening or dismissing the menu leaves playback and the queue untouched. The existing overflow buttons use the same actions.
 
-Updating from v0.2.0/v0.2.1/v0.2.2 to v0.2.3 requires only the new player bundle/APK. The server API and saved queue/outbox format are unchanged.
+Version **0.3.0 requires the matching updated server (API 0.4.0)** for Speed dial and Quick picks. Saved queues, outboxes and account records remain compatible with v0.2.x.
 
 The **Now playing options** menu includes song actions and opens the linked album or credited artists. **Ctrl+K** returns to catalog search from any page. Starting a search or opening a catalog page dismisses the phone keyboard.
 
@@ -20,7 +20,7 @@ Resuming a paused track keeps its occurrence ID and saved position. Replaying a 
 
 Configure the server first using the [root setup guide](../README.md). The player does not include account credentials or an embedded server.
 
-For v0.2.0, update the server from the same release before updating the player; catalog browsing requires server API 0.3.0. Restart the Python service after updating source, or rebuild/recreate the Docker service with `docker compose up -d --build`. Keep its persistent data directory/volume. Install the new APK over the previous APK without uninstalling to retain the device queue/outbox; the release uses the same signing key. Close Windows Personal Radio before replacing its bundle, then restart it. Existing account sessions, matching corrections, ratings, queues and listening events do not require migration.
+Update the server from the same release before updating the player. Restart the Python service after updating source, or rebuild/recreate the Docker service with `docker compose up -d --build`. Keep its persistent data directory/volume. Install the new APK over the previous APK without uninstalling to retain the device queue/outbox; the release uses the same signing key. Close Windows Personal Radio before replacing its bundle, then restart it. Existing account sessions, matching corrections, ratings, queues and listening events do not require migration.
 
 For a local source checkout with the Python environment and Windows release already prepared, double-click `Start Personal Radio.cmd` at the repository root. It starts the local Python service if necessary and opens the Windows release. Account files remain in `data/`. The launcher pairs the app using the device token; Flutter stores it using platform secure storage.
 
@@ -100,6 +100,6 @@ flutter test integration_test/windows_live_test.dart -d windows --dart-define=RA
 
 Offline tests use fixtures and never call your provider accounts. Release packaging requires Android SDK `aapt2` and checks the notification and media control icons in the compiled APK, because these are resolved by name and can otherwise be removed by resource shrinking. `scripts/Package-Apps.ps1` copies release outputs and writes SHA-256 checksums. No account file, pairing token, signing secret, or provider URL is included in the packages.
 
-Discover opens on **For you** with your signed-in YouTube Music **Speed dial** and **Quick picks**. Speed dial uses a swipeable three-by-three grid; artist and album shortcuts open their catalog pages, and playable shortcuts use YouTube's returned play action. Quick picks offers individual song radio and the provider's **Play all** action. Song long-press/right-click menus still offer Play next, Add to queue and artist/album links. Ratings remain in now playing. Search and its **For you** button let you switch between catalog results and home recommendations.
+Discover opens on **For you** with your signed-in YouTube Music **Speed dial** and **Quick picks**. Speed dial uses a swipeable three-by-three grid with previous/next buttons for mouse and keyboard users; artist and album shortcuts open their catalog pages, and playable shortcuts use YouTube's returned play action. Quick picks offers individual song radio and the provider's **Play all** action. Song long-press/right-click menus still offer Play next, Add to queue and artist/album links. Ratings remain in now playing. Search and its **For you** button let you switch between catalog results and home recommendations.
 
 Refresh Home with the refresh button or pull down. Refreshing keeps the current queue and pending listening events intact. The server must be updated for these shelves (API version 0.4.0). When YouTube signs the server out or omits a shelf, the app explains that instead of substituting generic recommendations. A home play selection can expire after a server restart; refresh Home and select it again. Normal queues, playback events and listening totals stay durable.

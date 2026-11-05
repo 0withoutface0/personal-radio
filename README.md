@@ -6,6 +6,7 @@ Use your own YouTube Music and Tidal subscriptions. Provider credentials stay on
 
 ## What it does
 
+- Discover your signed-in YouTube Music **Speed dial** and **Quick picks**, including the provider's **Play all** action. Artist and album shortcuts open their catalog pages; song shortcuts preserve YouTube's playback context.
 - Search songs, artists and albums; browse artist releases and album track lists. Play songs or albums directly without starting radio.
 - Add songs or whole albums to the queue, or play them next, while keeping the current radio context and recommendation order.
 - **Autoplay:** start a song normally and follow YouTube's returned Automix recommendations.
@@ -83,7 +84,7 @@ flowchart LR
 
 The proxy supports direct FLAC byte ranges and supported static FLAC DASH manifests exposed as HLS without transcoding. Signed provider URLs stay on the server. Expired streams are renewed when their source identity remains compatible; unsupported manifests or changed sources fail visibly.
 
-[Documented server interfaces](docs/API.md) cover account status, search, stations, queues, matching, streams, playback events, ratings and reports. The full [OpenAPI snapshot](docs/openapi.json) is included; a running server also exposes authenticated `GET /api/openapi.json`.
+[Documented server interfaces](docs/API.md) cover account status, personalized home shelves, search, stations, queues, matching, streams, playback events, ratings and reports. The full [OpenAPI snapshot](docs/openapi.json) is included; a running server also exposes authenticated `GET /api/openapi.json`.
 
 ## Development
 

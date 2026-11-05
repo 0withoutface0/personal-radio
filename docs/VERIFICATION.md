@@ -1,11 +1,15 @@
 # Verification status
 
-Version 0.2.3 is an early release. The Windows executable, signed Android APK and Linux Docker image have been built. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
+Version 0.3.0 is an early release. The Windows executable, signed Android APK and Linux Docker image are distributed separately from private account state. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
 
-Automated checks: **136 Python tests**, **60 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
+Automated checks: **149 Python tests**, **70 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
 
 | Check | Evidence / status |
 | --- | --- |
+| Personalized home shelves | Live read-only verification retrieved 19 Speed dial shortcuts (songs, artists, albums and playlists), 20 Quick picks and the provider's Play all action after account reconnection |
+| Home playback context | Speed dial song/playlist, Quick pick and Play all returned ordered initial and subsequent pages in an isolated SQLite store; no listening or rating writes |
+| Home UI and refresh | Phone/desktop layout, touch and button paging, artist/album navigation, exact playback targets, long-press queue action, search return, errors and stale refreshes covered; refresh leaves queue/outbox untouched |
+| Credential reconnection | Updated browser-auth files invalidate cached YouTube clients and home feeds; expired account feeds fail visibly instead of presenting anonymous recommendations as personal |
 | Catalog search and browsing | Live read-only song/artist/album search, artist releases and album tracks retrieved; no listening or rating writes |
 | Song context menus | Windows right-click and touch long-press across song views, cancellation, unavailable tracks, pointer positioning and radio-state preservation covered with fake transport |
 | Catalog player | Phone/desktop widget tests cover artist releases, album navigation, selected-track playback, now-playing links and Ctrl+K |
