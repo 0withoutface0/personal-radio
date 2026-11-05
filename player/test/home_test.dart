@@ -126,7 +126,11 @@ void main() {
       expect(f.requests.last.url.path, '/api/catalog/albums/MPRE1');
       await tester.tap(find.byTooltip('Back to browsing'));
       await tester.pumpAndSettle();
-      await tester.drag(find.byType(PageView), const Offset(-650, 0));
+      if (size.width > 1000) {
+        await tester.tap(find.byTooltip('Next Speed dial page'));
+      } else {
+        await tester.drag(find.byType(PageView), const Offset(-650, 0));
+      }
       await tester.pumpAndSettle();
       expect(find.text('2 / 2'), findsOneWidget);
       expect(find.text('Shortcut speed11'), findsOneWidget);

@@ -174,14 +174,13 @@ class HomeView extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 8),
-          const Text(
-            'Speed dial',
-            style: TextStyle(fontSize: 23, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 14),
-          if (speed.isEmpty)
-            _empty('speed_dial')
-          else
+          if (speed.isEmpty) ...[
+            const Text(
+              'Speed dial',
+              style: TextStyle(fontSize: 23, fontWeight: FontWeight.w700),
+            ),
+            _empty('speed_dial'),
+          ] else
             _SpeedDialGrid(
               key: ValueKey(
                 speed.map((x) => x['play_id'] ?? x['id']).join('|'),
@@ -254,6 +253,13 @@ class _SpeedDialGrid extends StatefulWidget {
 
 class _SpeedDialGridState extends State<_SpeedDialGrid> {
   int page = 0;
+  final controller = PageController();
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
@@ -266,9 +272,48 @@ class _SpeedDialGridState extends State<_SpeedDialGrid> {
           width: math.min(constraints.maxWidth, 600),
           child: Column(
             children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Speed dial',
+                      style: TextStyle(
+                        fontSize: 23,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (pages > 1) ...[
+                    IconButton(
+                      tooltip: 'Previous Speed dial page',
+                      onPressed: page == 0
+                          ? null
+                          : () => controller.animateToPage(
+                              page - 1,
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeOut,
+                            ),
+                      icon: const Icon(Icons.chevron_left),
+                    ),
+                    IconButton(
+                      tooltip: 'Next Speed dial page',
+                      onPressed: page == pages - 1
+                          ? null
+                          : () => controller.animateToPage(
+                              page + 1,
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeOut,
+                            ),
+                      icon: const Icon(Icons.chevron_right),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 14),
               SizedBox(
                 height: cell * rows + (rows - 1) * 8,
                 child: PageView.builder(
+                  controller: controller,
                   itemCount: pages,
                   onPageChanged: (value) => setState(() => page = value),
                   itemBuilder: (_, index) {
