@@ -1,6 +1,7 @@
 .venv/
 .cache/
 .codex-remote-attachments/
+.codex-attachments/
 .tools/
 __pycache__/
 .pytest_cache/
