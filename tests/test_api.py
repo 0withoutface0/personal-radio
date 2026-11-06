@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from radio_prototype.api import create_app
 from radio_prototype.config import Settings
+from radio_prototype.providers import Providers
 
 
 @pytest.fixture
@@ -158,6 +159,78 @@ def test_match_accepts_counterpart_without_creating_listening_activity(tmp_path)
     assert observed[0]["counterpart"]["duration"] == 275
     assert app.state.store.report()["totals"]["occurrences"] == 0
     assert app.state.store.submissions() == []
+
+
+@pytest.mark.parametrize("include_artists", [False, True])
+def test_match_song_with_artistless_video_counterpart(tmp_path, include_artists):
+    settings = Settings(tmp_path)
+    provider = Providers(settings)
+    track = {
+        "id": 123,
+        "title": "Song (feat. Guest)",
+        "artists": ["Artist", "Guest"],
+        "album": "Single",
+        "duration": 203,
+        "explicit": True,
+        "isrc": "FAKE123",
+    }
+    provider.candidates = lambda source: [track]
+    source = {
+        "video_id": "official-audio",
+        "title": "Song (feat. Guest)",
+        "artists": ["Artist"],
+        "album": "Single",
+        "duration": 203,
+        "explicit": True,
+        "video_type": "MUSIC_VIDEO_TYPE_ATV",
+        "counterpart": {
+            "video_id": "music-video",
+            "title": "Artist - Song ft Guest",
+            "duration": 203,
+            "video_type": "MUSIC_VIDEO_TYPE_OMV",
+        },
+    }
+    if include_artists:
+        source["counterpart"]["artists"] = []
+    app = create_app(settings, provider)
+    auth = {"Authorization": "Bearer " + settings.device_token()}
+    with TestClient(app, base_url="http://localhost") as client:
+        response = client.post("/api/match", headers=auth, json=source)
+        assert response.status_code == 200
+        assert response.json()["status"] == "matched"
+        assert response.json()["track"]["id"] == 123
+        # Optional metadata cannot relax the primary recording's constraints.
+        wrong_version = client.post("/api/match", headers=auth, json=source | {"explicit": False})
+        assert wrong_version.status_code == 200
+        assert wrong_version.json()["status"] == "skipped"
+        assert "explicit/clean" in wrong_version.json()["reason"]
+    assert app.state.store.report()["totals"]["occurrences"] == 0
+    assert app.state.store.submissions() == []
+
+
+def test_match_still_requires_primary_artist_metadata(api):
+    client, _, auth = api
+    response = client.post(
+        "/api/match", headers=auth, json={"video_id": "audio", "title": "Song", "artists": []}
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "artists"]
+
+
+def test_counterpart_artist_limit_stays_bounded(api):
+    client, _, auth = api
+    response = client.post(
+        "/api/match",
+        headers=auth,
+        json={
+            "video_id": "audio",
+            "title": "Song",
+            "artists": ["Artist"],
+            "counterpart": {"video_id": "video", "title": "Song", "artists": ["A"] * 21},
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "counterpart", "artists"]
 
 
 def test_manual_correction_takes_priority_over_audio_resolution(api):

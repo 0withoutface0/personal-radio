@@ -91,8 +91,15 @@ class RecordingInput(BaseModel):
     video_type: str | None = Field(default=None, max_length=100)
 
 
+class CounterpartInput(RecordingInput):
+    # YouTube's optional video/song link can omit its artist byline. Preserve
+    # that hint without requiring it to identify the primary recording. The
+    # matcher still checks complete identity before using an audio reference.
+    artists: list[str] = Field(default_factory=list, max_length=20)
+
+
 class SourceInput(RecordingInput):
-    counterpart: RecordingInput | None = None
+    counterpart: CounterpartInput | None = None
 
 
 class CorrectionInput(TrackInput):
@@ -122,7 +129,7 @@ def create_app(settings=None, providers=None):
     decode_lock = threading.Lock()
     app = FastAPI(
         title="Personal lossless radio",
-        version="0.4.0",
+        version="0.4.1",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,

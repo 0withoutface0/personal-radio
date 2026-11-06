@@ -2,10 +2,11 @@
 
 Version 0.3.1 is an early release. The Windows executable, signed Android APK and Linux Docker image are distributed separately from private account state. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
 
-Automated checks: **149 Python tests** (unchanged server), **85 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
+Automated checks: **153 Python tests** (server API 0.4.1), **85 Flutter unit/widget tests** (unchanged v0.3.1 player), clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
 
 | Check | Evidence / status |
 | --- | --- |
+| Partial counterpart metadata | Empty or omitted artists on YouTube's optional counterpart accepted without weakening primary artist, explicit/clean or size constraints. Live read-only verification matched the reported Speed dial and search song to the same Tidal recording; no playback events or ratings created |
 | Cellular outage recovery | Fake transport covers stalled headers/body, aborted requests without automatic mutation replay, serialized heartbeats, bounded lease grace, takeover, retries, saved occurrences/position and pause/skip cancellation |
 | Native network buffering | Windows native integration check passed with generated silence and a deliberately stalled loopback HTTP socket; confirmed memory cache settings and advancing playback during the stall; no accounts or activity reporting used |
 | Phone-wide VPN failures | A user reported intermittent cellular failures in other apps and audio remaining stalled after internet access recovered. Direct cellular connectivity was observed, with substantial latency variation. The underlying Android/Tailscale cause and the new app's physical cellular recovery remain unverified |
@@ -48,3 +49,5 @@ The machine-readable prototype gate has stricter evidence requirements, includin
 To repeat the opt-in native playback test, follow the [player guide](../player/README.md). Add `--dart-define=RADIO_FULL_TRACK=true` for the slower natural-end test. This test plays real audio and can report actual listening. Ordinary offline tests never use provider accounts.
 
 Account-specific reports, tokens, listening records and signing material are private local state and are excluded from the repository and application packages.
+
+The API 0.4.1 counterpart patch was tested and loaded in the native Windows-hosted server. A Docker rebuild could not run for this patch because the local Docker engine was stopped; the earlier image/persistence evidence above predates this patch.
