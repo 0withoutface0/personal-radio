@@ -44,7 +44,7 @@ void main() {
     expect(r.entries.every((e) => e.occurrenceId != old.occurrenceId), true);
     expect(r.outbox.single['body']['id'], 'existing-event');
     final firstPlay = r.current!.occurrenceId;
-    expect(f.player.opened.single.uri, 'http://127.0.0.1:8765/fake.flac');
+    expect(f.player.opened.single.uri, 'http://127.0.0.1:8765/fake1.flac');
     expect(f.player.opened.single.httpHeaders!['Authorization'], 'Bearer test');
     expect(f.requests.any((q) => q.url.path == '/api/queues'), false);
     await r.prefetch();

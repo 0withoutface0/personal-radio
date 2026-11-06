@@ -13,6 +13,13 @@ import 'disk.dart';
 import 'models.dart';
 import 'playback_network.dart';
 
+class _PreparedTrack {
+  final QueueEntry from, entry;
+  final mk.Media media;
+  Map<String, dynamic> quality;
+  _PreparedTrack(this.from, this.entry, this.media, this.quality);
+}
+
 class RadioController extends ChangeNotifier {
   final RadioDisk disk;
   final FlutterSecureStorage secrets = const FlutterSecureStorage();
@@ -24,7 +31,11 @@ class RadioController extends ChangeNotifier {
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   Timer? _timer;
   Future<void>? _loadingMore;
-  Future<void>? _syncing;
+  Future<void>? _syncing, _preloading;
+  _PreparedTrack? _prepared;
+  int _preloadEpoch = 0;
+  bool _handoff = false;
+  Duration _nextPreloadAttempt = Duration.zero;
   bool _recovering = false;
   bool _draining = false,
       _advancing = false,
@@ -75,7 +86,7 @@ class RadioController extends ChangeNotifier {
       ? entries[currentIndex]
       : null;
   bool get ready => api != null && connected;
-  bool get changingQueue => busy || _advancing || _opening;
+  bool get changingQueue => busy || _advancing || _opening || _handoff;
   RadioController(this.disk, {Duration Function()? leaseNow}) {
     _leaseNow = leaseNow ?? () => _time.elapsed;
   }
@@ -150,61 +161,7 @@ class RadioController extends ChangeNotifier {
         await secrets.write(key: 'device_token', value: token);
       }
     }
-    player = mk.Player(configuration: networkPlayerConfiguration);
-    await configureNetworkPlayback(player!);
-    await player!.setVolume(volume);
-    _subscriptions.add(
-      player!.stream.playing.listen((value) {
-        playing = value;
-        if (!value) _clock.reset();
-        update();
-      }),
-    );
-    _subscriptions.add(
-      player!.stream.buffering.listen((value) {
-        buffering = value;
-        if (value) {
-          _clock.reset();
-          _stableSince = null;
-        }
-        update();
-      }),
-    );
-    _subscriptions.add(player!.stream.position.listen(_positionChanged));
-    _subscriptions.add(
-      player!.stream.duration.listen((value) {
-        duration = value;
-        update();
-      }),
-    );
-    _subscriptions.add(
-      player!.stream.completed.listen((value) {
-        if (value && !_opening && !_advancing) {
-          if (duration > Duration.zero &&
-              position >= duration - const Duration(seconds: 2)) {
-            unawaited(advance(natural: true));
-          } else {
-            _needsReopen = true;
-            unawaited(checkPlaybackConnection());
-          }
-        }
-      }),
-    );
-    _subscriptions.add(
-      player!.stream.error.listen((message) {
-        final occurrence = current?.occurrenceId;
-        final epoch = _transportEpoch;
-        Future<void>.delayed(const Duration(seconds: 1), () {
-          if (!_disposed &&
-              current?.occurrenceId == occurrence &&
-              epoch == _transportEpoch &&
-              _resumeWanted) {
-            _needsReopen = true;
-            unawaited(checkPlaybackConnection());
-          }
-        });
-      }),
-    );
+    await attachPlayer(mk.Player(configuration: networkPlayerConfiguration));
     if (Platform.isAndroid) {
       _session = await AudioSession.instance;
       await _session!.configure(const AudioSessionConfiguration.music());
@@ -243,6 +200,106 @@ class RadioController extends ChangeNotifier {
     }
     await persist();
     update();
+  }
+
+  /// Attach the native transport separately from account setup so integration
+  /// checks can exercise the real playlist with an isolated fixture API.
+  @visibleForTesting
+  Future<void> attachPlayer(mk.Player playback) async {
+    player = playback;
+    await configureNetworkPlayback(player!);
+    await player!.setVolume(volume);
+    _subscriptions.add(
+      player!.stream.playing.listen((value) {
+        playing = value;
+        if (!value) _clock.reset();
+        update();
+      }),
+    );
+    _subscriptions.add(
+      player!.stream.buffering.listen((value) {
+        buffering = value;
+        if (value) {
+          _clock.reset();
+          _stableSince = null;
+        }
+        update();
+      }),
+    );
+    _subscriptions.add(
+      player!.stream.playlist.listen((playlist) {
+        unawaited(handlePlaylist(playlist));
+      }),
+    );
+    _subscriptions.add(player!.stream.position.listen(_positionChanged));
+    _subscriptions.add(
+      player!.stream.duration.listen((value) {
+        final playlist = player!.state.playlist;
+        if (playlist.index >= 0 &&
+            playlist.index < playlist.medias.length &&
+            playlist.medias[playlist.index].extras?['occurrence_id'] !=
+                _loadedOccurrence) {
+          return;
+        }
+        // A new file can publish a zero duration before the playlist callback.
+        if (_prepared != null && value == Duration.zero) return;
+        duration = value;
+        update();
+      }),
+    );
+    _subscriptions.add(
+      player!.stream.completed.listen((value) {
+        if (value && !_opening && !_advancing && !_handoff) {
+          if (_prepared != null) {
+            // mpv can publish eof-reached before playlist-playing-pos. Allow
+            // native advancement first instead of reopening the buffered URL.
+            final occurrence = current?.occurrenceId;
+            Future<void>.delayed(const Duration(milliseconds: 800), () async {
+              if (_disposed ||
+                  current?.occurrenceId != occurrence ||
+                  !_resumeWanted ||
+                  _opening ||
+                  _advancing ||
+                  _handoff) {
+                return;
+              }
+              await handlePlaylist(player!.state.playlist);
+              if (current?.occurrenceId == occurrence &&
+                  player!.state.completed) {
+                await advance(
+                  natural:
+                      duration > Duration.zero &&
+                      position >= duration - const Duration(seconds: 2),
+                );
+              }
+            });
+            return;
+          }
+          if (duration > Duration.zero &&
+              position >= duration - const Duration(seconds: 2)) {
+            unawaited(advance(natural: true));
+          } else {
+            _needsReopen = true;
+            unawaited(checkPlaybackConnection());
+          }
+        }
+      }),
+    );
+    _subscriptions.add(
+      player!.stream.error.listen((message) {
+        final occurrence = current?.occurrenceId;
+        final epoch = _transportEpoch;
+        Future<void>.delayed(const Duration(seconds: 1), () {
+          if (!_disposed &&
+              current?.occurrenceId == occurrence &&
+              epoch == _transportEpoch &&
+              _resumeWanted) {
+            _needsReopen = true;
+            unawaited(checkPlaybackConnection());
+          }
+        });
+      }),
+    );
   }
 
   Future<void> connect(String address, String accessToken) async {
@@ -632,6 +689,7 @@ class RadioController extends ChangeNotifier {
       additions,
     );
     try {
+      await _validatePreload();
       await persist();
       update();
       return additions.length;
@@ -683,6 +741,7 @@ class RadioController extends ChangeNotifier {
       }
       entries.removeAt(index);
       if (index <= currentIndex) currentIndex--;
+      await _validatePreload();
       if (active) {
         // Removal is an explicit skip, never a completion or a rating.
         if (!ready) {
@@ -756,6 +815,7 @@ class RadioController extends ChangeNotifier {
     } catch (e) {
       fail(e);
     } finally {
+      await _validatePreload();
       retryingMatches = false;
       update();
     }
@@ -779,6 +839,241 @@ class RadioController extends ChangeNotifier {
     }
   }
 
+  QueueEntry? get _nextPlayable {
+    for (final entry in entries.skip(currentIndex + 1)) {
+      if (entry.status != 'skipped') return entry;
+    }
+    return null;
+  }
+
+  Future<void> _trimNativeFuture() async {
+    final native = player;
+    if (native == null) return;
+    // Never remove the active media; late resolution can race an edit or EOF.
+    while (native.state.playlist.medias.length >
+        native.state.playlist.index + 1) {
+      await native.remove(native.state.playlist.medias.length - 1);
+    }
+  }
+
+  Future<void> _cancelPreload() async {
+    _preloadEpoch++;
+    _prepared = null;
+    _nextPreloadAttempt = Duration.zero;
+    await _trimNativeFuture();
+  }
+
+  Future<void> _validatePreload() async {
+    final plan = _prepared;
+    if (plan == null ||
+        !identical(plan.from, current) ||
+        !identical(plan.entry, _nextPlayable) ||
+        plan.entry.tidal?['id'] != plan.media.extras?['tidal_id']) {
+      await _cancelPreload();
+    }
+  }
+
+  /// Resolve and append one future stream, without registering a play. mpv
+  /// prefetches its demuxer once the current file has been read into RAM.
+  /// Called near the end so temporary stream plans don't expire in long tracks.
+  Future<void> preloadNext() async {
+    if (_preloading != null) {
+      await _preloading;
+      return;
+    }
+    if (_disposed ||
+        !ready ||
+        !_resumeWanted ||
+        !hasLease ||
+        changingQueue ||
+        _recovering ||
+        current == null ||
+        _loadedOccurrence != current!.occurrenceId ||
+        duration <= Duration.zero ||
+        duration - position > const Duration(seconds: 90) ||
+        _leaseNow() < _nextPreloadAttempt) {
+      return;
+    }
+    await _validatePreload();
+    if (_prepared != null) return;
+    final operation = _preloadNext();
+    _preloading = operation;
+    try {
+      await operation;
+    } finally {
+      _preloading = null;
+    }
+  }
+
+  Future<void> _preloadNext() async {
+    final from = current!;
+    final epoch = _preloadEpoch;
+    final client = api!;
+    bool active() =>
+        !_disposed &&
+        _resumeWanted &&
+        hasLease &&
+        identical(client, api) &&
+        identical(from, current) &&
+        epoch == _preloadEpoch &&
+        !_opening &&
+        !_advancing;
+    try {
+      if (_nextPlayable == null && nextCursor != null) await _more();
+      for (int attempted = 0; attempted < 150 && active(); attempted++) {
+        final next = _nextPlayable;
+        if (next == null) return;
+        if (!await prepare(next)) continue;
+        if (!active() || !identical(next, _nextPlayable)) return;
+        final tidalId = next.tidal!['id'];
+        final stream = Map<String, dynamic>.from(
+          await client.call(
+            '/api/streams',
+            body: {'tidal_id': tidalId},
+            timeout: const Duration(seconds: 20),
+          ),
+        );
+        if (!active() ||
+            !identical(next, _nextPlayable) ||
+            next.tidal?['id'] != tidalId) {
+          return;
+        }
+        // Resolution can outlast a lease. Confirm ownership before appending
+        // anything that native playback could advance into automatically.
+        await acquire();
+        if (!active() || !identical(next, _nextPlayable)) return;
+        final plan = _PreparedTrack(
+          from,
+          next,
+          mk.Media(
+            '$origin${stream['url']}',
+            httpHeaders: client.headers,
+            extras: {'occurrence_id': next.occurrenceId, 'tidal_id': tidalId},
+          ),
+          {'verified': false, ...stream},
+        );
+        _prepared = plan;
+        await player!.add(plan.media);
+        if (!active() || !identical(_prepared, plan)) {
+          await _trimNativeFuture();
+          return;
+        }
+        unawaited(() async {
+          try {
+            final measured = Map<String, dynamic>.from(
+              await client.call('/api/streams/${stream['id']}/quality'),
+            );
+            final previous = plan.quality;
+            plan.quality = measured;
+            if (_loadedOccurrence == next.occurrenceId &&
+                identical(quality, previous)) {
+              quality = measured;
+              update();
+            }
+          } catch (_) {
+            /* Keep manifest quality explicitly unverified. */
+          }
+        }());
+        return;
+      }
+    } catch (_) {
+      // Preparation failure must not interrupt the song already playing.
+      // Ordinary opening/recovery remains the fallback at the boundary.
+      if (active()) {
+        _prepared = null;
+        _nextPreloadAttempt = _leaseNow() + const Duration(seconds: 10);
+        await _trimNativeFuture();
+      }
+    }
+  }
+
+  /// Native playlist changes are the actual playback boundary, not prefetch.
+  /// Registration precedes new events in the durable outbox, so a brief API
+  /// outage at EOF doesn't introduce a gap or create duplicate occurrences.
+  @visibleForTesting
+  Future<void> handlePlaylist(mk.Playlist playlist) async {
+    if (_disposed ||
+        _opening ||
+        _advancing ||
+        _handoff ||
+        playlist.index < 0 ||
+        playlist.index >= playlist.medias.length) {
+      return;
+    }
+    final media = playlist.medias[playlist.index];
+    final occurrence = media.extras?['occurrence_id'];
+    if (occurrence == null || occurrence == _loadedOccurrence) return;
+    final plan = _prepared;
+    if (plan == null ||
+        plan.entry.occurrenceId != occurrence ||
+        !identical(current, plan.from) ||
+        !identical(_nextPlayable, plan.entry) ||
+        plan.entry.tidal?['id'] != plan.media.extras?['tidal_id'] ||
+        !_resumeWanted ||
+        !hasLease) {
+      await pause();
+      _needsReopen = true;
+      return;
+    }
+    _handoff = true;
+    try {
+      final completed =
+          duration > Duration.zero &&
+          position >= duration - const Duration(seconds: 2) &&
+          !_seeking;
+      if (completed && plan.from.status != 'completed') {
+        plan.from.status = 'completed';
+        await _event(0, completed: true);
+      }
+      currentIndex = entries.indexOf(plan.entry);
+      _loadedOccurrence = occurrence as String;
+      _prepared = null;
+      _preloadEpoch++;
+      _nextPreloadAttempt = Duration.zero;
+      _transportEpoch++;
+      position = Duration.zero;
+      duration = Duration(
+        milliseconds:
+            ((plan.entry.tidal?['duration'] as num? ??
+                        plan.entry.song.duration.inMilliseconds / 1000) *
+                    1000)
+                .round(),
+      );
+      plan.entry.status = 'playing';
+      quality = plan.quality;
+      _clock = ListeningClock();
+      _needsReopen = false;
+      _reconnects = 0;
+      _nextRecovery = Duration.zero;
+      _lastProgressAt = _leaseNow();
+      _stableSince = null;
+      outbox.add({
+        'id': ids.v4(),
+        'path': '/api/occurrences',
+        'body': {
+          'id': occurrence,
+          'tidal_id': plan.entry.tidal!['id'],
+          'video_id': plan.entry.song.id,
+        },
+      });
+      await persist();
+      // Remove played native entries only after adopting their successor. mpv
+      // keeps the same audio output; the app queue/history remains untouched.
+      while (player!.state.playlist.index > 0) {
+        await player!.remove(0);
+      }
+      error = null;
+      update();
+      unawaited(prefetch());
+      unawaited(sync());
+    } catch (e) {
+      await pause();
+      fail(e);
+    } finally {
+      _handoff = false;
+    }
+  }
+
   Future<void> advance({bool natural = false}) async {
     if (_advancing || _opening || !ready) return;
     if (natural && current?.status == 'completed') return;
@@ -792,6 +1087,7 @@ class RadioController extends ChangeNotifier {
         await _event(0, completed: true);
       }
       await player!.pause();
+      await _cancelPreload();
       _clock.reset();
       for (int attempted = 0; attempted < 150; attempted++) {
         if (currentIndex + 1 >= entries.length && nextCursor != null) {
@@ -863,6 +1159,7 @@ class RadioController extends ChangeNotifier {
     entry.tidal = Map<String, dynamic>.from(result['track']);
     entry.status = 'matched';
     entry.reason = null;
+    await _validatePreload();
     await persist();
     update();
   }
@@ -887,6 +1184,7 @@ class RadioController extends ChangeNotifier {
               .round(),
     );
     try {
+      await _cancelPreload();
       await acquire();
       if (!active()) return;
       await api!.call(
@@ -920,7 +1218,14 @@ class RadioController extends ChangeNotifier {
       if (!active()) return;
       _loadedOccurrence = entry.occurrenceId;
       await player!.open(
-        mk.Media('$origin${stream['url']}', httpHeaders: api!.headers),
+        mk.Media(
+          '$origin${stream['url']}',
+          httpHeaders: api!.headers,
+          extras: {
+            'occurrence_id': entry.occurrenceId,
+            'tidal_id': entry.tidal!['id'],
+          },
+        ),
         play: false,
       );
       if (!active()) {
@@ -1014,7 +1319,15 @@ class RadioController extends ChangeNotifier {
   }
 
   void _positionChanged(Duration value) {
-    if (_loadedOccurrence == null) return;
+    if (_loadedOccurrence == null || _handoff) return;
+    final playlist = player!.state.playlist;
+    if (playlist.index >= 0 &&
+        playlist.index < playlist.medias.length &&
+        playlist.medias[playlist.index].extras?['occurrence_id'] !=
+            _loadedOccurrence) {
+      // The playlist callback will adopt this media before any time is credited.
+      return;
+    }
     if (value > position && playing && !buffering && !_opening && !_seeking) {
       _lastProgressAt = _leaseNow();
       _stableSince ??= _lastProgressAt;
@@ -1171,6 +1484,7 @@ class RadioController extends ChangeNotifier {
     if (!_draining) unawaited(sync());
     await maintainPlaybackLease();
     await checkPlaybackConnection();
+    await preloadNext();
   }
 
   Future<void> play() async {
@@ -1224,6 +1538,7 @@ class RadioController extends ChangeNotifier {
     playing = false;
     _clock.reset();
     if (player != null) await player!.pause();
+    await _cancelPreload();
     await persist();
   }
 
@@ -1231,6 +1546,8 @@ class RadioController extends ChangeNotifier {
     _seeking = true;
     _clock.reset();
     try {
+      // Seeking back can leave the next stream unused beyond its expiry.
+      await _cancelPreload();
       await player!.seek(target);
       position = target;
       _lastProgressAt = _leaseNow();
@@ -1364,19 +1681,22 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
     final current = radio.current;
     if (current == null ||
         extras?['occurrence_id'] != current.occurrenceId ||
-        !['LIKE', 'INDIFFERENT'].contains(extras?['value']))
+        !['LIKE', 'INDIFFERENT'].contains(extras?['value'])) {
       return;
+    }
     final desired = extras!['value'] == 'LIKE';
     // A repeated/stale PendingIntent must never toggle a second time or rate
     // a different song after the queue has advanced.
-    if ((radio.currentRating?.value == 'LIKE') != desired)
+    if ((radio.currentRating?.value == 'LIKE') != desired) {
       await radio.rate('LIKE');
+    }
   }
 
   @override
   Future<void> setRating(Rating rating, [Map<String, dynamic>? extras]) async {
-    if (rating.getRatingStyle() != RatingStyle.heart || !rating.isRated())
+    if (rating.getRatingStyle() != RatingStyle.heart || !rating.isRated()) {
       return;
+    }
     final occurrence = extras?['occurrence_id'] ?? radio.current?.occurrenceId;
     await customAction(likeAction, {
       'occurrence_id': occurrence,

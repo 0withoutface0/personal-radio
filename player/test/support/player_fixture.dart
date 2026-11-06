@@ -33,6 +33,28 @@ class FakePlayer extends Fake implements mk.Player {
   Future<void> Function()? onStop;
   Future<void> Function()? onOpen;
   @override
+  Future<void> add(mk.Media media) async {
+    state = state.copyWith(
+      playlist: mk.Playlist([
+        ...state.playlist.medias,
+        media,
+      ], index: state.playlist.index),
+    );
+  }
+
+  @override
+  Future<void> remove(int index) async {
+    final old = state.playlist;
+    final medias = [...old.medias]..removeAt(index);
+    state = state.copyWith(
+      playlist: mk.Playlist(
+        medias,
+        index: index < old.index ? old.index - 1 : old.index,
+      ),
+    );
+  }
+
+  @override
   Future<void> open(mk.Playable playable, {bool play = true}) async {
     final media = playable as mk.Media;
     opened.add(media);
@@ -81,6 +103,7 @@ class PlayerFixture {
   final List<http.Request> requests = [];
   final Set<String> unmatched = {};
   Future<void> Function()? onMatch, onLease;
+  Future<void> Function(http.Request)? beforeRequest;
   Future<Map<String, dynamic>> Function(http.Request)? catalog;
   PlayerFixture({Duration Function()? leaseNow}) {
     radio = RadioController(MemoryDisk(), leaseNow: leaseNow);
@@ -92,6 +115,7 @@ class PlayerFixture {
       radio.deviceId,
       client: MockClient((request) async {
         requests.add(request);
+        await beforeRequest?.call(request);
         final path = request.url.path;
         Map<String, dynamic> result;
         if (path == '/api/match') {
@@ -118,7 +142,8 @@ class PlayerFixture {
           );
           result = {'id': body['id']};
         } else if (path == '/api/streams') {
-          result = {'id': 'stream', 'url': '/fake.flac'};
+          final id = requests.where((q) => q.url.path == '/api/streams').length;
+          result = {'id': 'stream$id', 'url': '/fake$id.flac'};
         } else if (path.endsWith('/quality')) {
           result = {
             'verified': true,

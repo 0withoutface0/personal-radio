@@ -12,6 +12,9 @@ Future<void> configureNetworkPlayback(mk.Player player) async {
   if (native is! mk.NativePlayer) return;
   for (final option in {
     'cache-on-disk': 'no',
+    'prefetch-playlist': 'yes',
+    // Preserve each source format; reopen output only when it changes.
+    'gapless-audio': 'weak',
     'demuxer-max-back-bytes': '${8 * 1024 * 1024}',
     'cache-secs': '90',
     'demuxer-readahead-secs': '90',

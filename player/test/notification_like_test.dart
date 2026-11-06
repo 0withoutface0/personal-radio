@@ -35,8 +35,9 @@ void main() {
         return {'queued': true};
       }
       if (request.url.path == '/api/report') return {'submissions': []};
-      if (request.url.path == '/api/reporting/dispatch')
+      if (request.url.path == '/api/reporting/dispatch') {
         return {'queued': true};
+      }
       throw StateError('Unexpected fixture request');
     };
     handler = RadioAudioHandler(f.radio);
