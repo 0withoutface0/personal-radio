@@ -10,6 +10,7 @@ import 'package:media_kit/media_kit.dart' as mk;
 import 'api.dart';
 import 'disk.dart';
 import 'models.dart';
+import 'playback_network.dart';
 
 class RadioController extends ChangeNotifier {
   final RadioDisk disk;
@@ -31,6 +32,10 @@ class RadioController extends ChangeNotifier {
   bool _interruptedPlaying = false, _opening = false, _disposed = false;
   int _generation = 0, _reconnects = 0;
   bool _renewingLease = false;
+  bool _resumeWanted = false, _needsReopen = false;
+  int _transportEpoch = 0;
+  Duration _lastProgressAt = Duration.zero, _nextRecovery = Duration.zero;
+  Duration? _stableSince;
   Duration? _leaseValidUntil;
   Duration _nextLeaseHeartbeat = Duration.zero;
   late final Duration Function() _leaseNow;
@@ -128,9 +133,8 @@ class RadioController extends ChangeNotifier {
         await secrets.write(key: 'device_token', value: token);
       }
     }
-    player = mk.Player(
-      configuration: const mk.PlayerConfiguration(title: 'Personal Radio'),
-    );
+    player = mk.Player(configuration: networkPlayerConfiguration);
+    await configureNetworkPlayback(player!);
     await player!.setVolume(volume);
     _subscriptions.add(
       player!.stream.playing.listen((value) {
@@ -142,7 +146,10 @@ class RadioController extends ChangeNotifier {
     _subscriptions.add(
       player!.stream.buffering.listen((value) {
         buffering = value;
-        if (value) _clock.reset();
+        if (value) {
+          _clock.reset();
+          _stableSince = null;
+        }
         update();
       }),
     );
@@ -160,7 +167,8 @@ class RadioController extends ChangeNotifier {
               position >= duration - const Duration(seconds: 2)) {
             unawaited(advance(natural: true));
           } else {
-            unawaited(_recoverStream());
+            _needsReopen = true;
+            unawaited(checkPlaybackConnection());
           }
         }
       }),
@@ -168,9 +176,14 @@ class RadioController extends ChangeNotifier {
     _subscriptions.add(
       player!.stream.error.listen((message) {
         final occurrence = current?.occurrenceId;
+        final epoch = _transportEpoch;
         Future<void>.delayed(const Duration(seconds: 1), () {
-          if (!_disposed && current?.occurrenceId == occurrence) {
-            unawaited(_recoverStream());
+          if (!_disposed &&
+              current?.occurrenceId == occurrence &&
+              epoch == _transportEpoch &&
+              _resumeWanted) {
+            _needsReopen = true;
+            unawaited(checkPlaybackConnection());
           }
         });
       }),
@@ -437,9 +450,14 @@ class RadioController extends ChangeNotifier {
   /// stopping before the confirmed lease expires or immediately on takeover.
   Future<void> maintainPlaybackLease() async {
     if (!ready || !hasLease || (!playing && !buffering)) return;
-    Future<void> stop(Object failure) async {
+    Future<void> stop(Object failure, {bool reconnect = false}) async {
+      final wanted = _resumeWanted;
       hasLease = false;
       await pause();
+      if (reconnect && wanted) {
+        _resumeWanted = true;
+        _needsReopen = true;
+      }
       fail(failure);
     }
 
@@ -451,6 +469,7 @@ class RadioController extends ChangeNotifier {
           0,
           'Server connection lost. Press play to reconnect at the saved position.',
         ),
+        reconnect: true,
       );
       return;
     }
@@ -462,8 +481,10 @@ class RadioController extends ChangeNotifier {
       await acquire();
     } catch (e) {
       if (!identical(client, api) || !hasLease) return;
-      if (e is ApiFailure && [401, 403, 409].contains(e.status) || expired()) {
+      if (e is ApiFailure && [401, 403, 409].contains(e.status)) {
         await stop(e);
+      } else if (expired()) {
+        await stop(e, reconnect: true);
       } else {
         connectionMessage = 'Connection interrupted · retrying';
         update();
@@ -745,6 +766,9 @@ class RadioController extends ChangeNotifier {
     if (_advancing || _opening || !ready) return;
     if (natural && current?.status == 'completed') return;
     _advancing = true;
+    final epoch = ++_transportEpoch;
+    _resumeWanted = false;
+    _needsReopen = false;
     try {
       if (natural && current != null) {
         current!.status = 'completed';
@@ -755,6 +779,7 @@ class RadioController extends ChangeNotifier {
       for (int attempted = 0; attempted < 150; attempted++) {
         if (currentIndex + 1 >= entries.length && nextCursor != null) {
           await _more();
+          if (epoch != _transportEpoch) return;
         }
         if (currentIndex + 1 >= entries.length) {
           error = mode == 'queue'
@@ -765,7 +790,10 @@ class RadioController extends ChangeNotifier {
         currentIndex++;
         position = Duration.zero;
         _reconnects = 0;
+        _nextRecovery = Duration.zero;
         if (!await prepare(current!)) continue;
+        if (epoch != _transportEpoch) return;
+        _resumeWanted = true;
         await _openCurrent();
         return;
       }
@@ -825,6 +853,12 @@ class RadioController extends ChangeNotifier {
   Future<void> _openCurrent({Duration? resume}) async {
     final entry = current!;
     final desired = resume ?? Duration.zero;
+    final epoch = _transportEpoch;
+    bool active() =>
+        !_disposed &&
+        _resumeWanted &&
+        epoch == _transportEpoch &&
+        identical(current, entry);
     _opening = true;
     quality = null;
     _clock = ListeningClock();
@@ -837,6 +871,7 @@ class RadioController extends ChangeNotifier {
     );
     try {
       await acquire();
+      if (!active()) return;
       await api!.call(
         '/api/occurrences',
         body: {
@@ -844,10 +879,20 @@ class RadioController extends ChangeNotifier {
           'tidal_id': entry.tidal!['id'],
           'video_id': entry.song.id,
         },
+        timeout: const Duration(seconds: 5),
       );
+      if (!active()) return;
       final stream = Map<String, dynamic>.from(
-        await api!.call('/api/streams', body: {'tidal_id': entry.tidal!['id']}),
+        await api!.call(
+          '/api/streams',
+          body: {'tidal_id': entry.tidal!['id']},
+          timeout: const Duration(seconds: 20),
+        ),
       );
+      if (!active()) return;
+      // Source resolution may outlast the lease; confirm ownership before audio.
+      await acquire();
+      if (!active()) return;
       quality = {'verified': false, ...stream};
       _clock.reset();
       position = desired;
@@ -855,22 +900,36 @@ class RadioController extends ChangeNotifier {
         throw ApiFailure(409, 'Audio is temporarily in use by another app.');
       }
       await persist();
+      if (!active()) return;
       _loadedOccurrence = entry.occurrenceId;
       await player!.open(
         mk.Media('$origin${stream['url']}', httpHeaders: api!.headers),
         play: false,
       );
+      if (!active()) {
+        await player!.pause();
+        return;
+      }
       if (desired > Duration.zero) await player!.seek(desired);
+      if (!active()) return;
       position = desired;
       entry.status = 'playing';
       await player!.play();
+      if (!active()) {
+        await player!.pause();
+        return;
+      }
+      _needsReopen = false;
+      _lastProgressAt = _leaseNow();
+      _stableSince = null;
+      error = null;
       final occurrence = entry.occurrenceId;
       unawaited(() async {
         try {
           final measured = Map<String, dynamic>.from(
             await api!.call('/api/streams/${stream['id']}/quality'),
           );
-          if (current?.occurrenceId == occurrence) {
+          if (current?.occurrenceId == occurrence && epoch == _transportEpoch) {
             quality = measured;
             update();
           }
@@ -879,27 +938,59 @@ class RadioController extends ChangeNotifier {
         }
       }());
       unawaited(prefetch());
+    } catch (_) {
+      if (active()) _needsReopen = true;
+      rethrow;
     } finally {
       _opening = false;
       update();
     }
   }
 
-  Future<void> _recoverStream() async {
-    if (_recovering || _disposed) return;
-    if (_opening || _advancing || current == null || _reconnects >= 3) {
+  /// An old audio socket can remain stalled after the VPN itself recovers.
+  /// Retry the same occurrence, with a bound and explicit user cancellation.
+  Future<void> checkPlaybackConnection() async {
+    if (_recovering ||
+        _disposed ||
+        !_resumeWanted ||
+        !ready ||
+        _opening ||
+        _advancing ||
+        current == null) {
+      return;
+    }
+    if (!_needsReopen &&
+        (_loadedOccurrence != current!.occurrenceId ||
+            _leaseNow() - _lastProgressAt < const Duration(seconds: 12))) {
+      return;
+    }
+    _needsReopen = true;
+    if (_leaseNow() < _nextRecovery) return;
+    if (_reconnects >= 3) {
+      await pause();
       error = 'Playback interrupted. Press play to reconnect at the saved position.';
       update();
       return;
     }
     _reconnects++;
     _recovering = true;
+    final epoch = ++_transportEpoch;
     final saved = position;
+    _nextRecovery = _leaseNow() + Duration(seconds: _reconnects * 2);
     try {
       await player!.pause();
+      if (epoch != _transportEpoch || !_resumeWanted) return;
       await _openCurrent(resume: saved);
     } catch (e) {
-      fail(e);
+      if (epoch != _transportEpoch || !_resumeWanted) return;
+      if (e is ApiFailure && [401, 403, 409].contains(e.status)) {
+        hasLease = false;
+        await pause();
+        fail(e);
+      } else {
+        error = 'Reconnecting audio ($_reconnects/3). Your position is saved.';
+        update();
+      }
     } finally {
       _recovering = false;
     }
@@ -907,6 +998,13 @@ class RadioController extends ChangeNotifier {
 
   void _positionChanged(Duration value) {
     if (_loadedOccurrence == null) return;
+    if (value > position && playing && !buffering && !_opening && !_seeking) {
+      _lastProgressAt = _leaseNow();
+      _stableSince ??= _lastProgressAt;
+      if (_lastProgressAt - _stableSince! >= const Duration(seconds: 30)) {
+        _reconnects = 0;
+      }
+    }
     position = value;
     final seconds = _clock.sample(
       value.inMicroseconds / 1e6,
@@ -1055,11 +1153,14 @@ class RadioController extends ChangeNotifier {
     if (!ready) return;
     if (!_draining) unawaited(sync());
     await maintainPlaybackLease();
+    await checkPlaybackConnection();
   }
 
   Future<void> play() async {
     if (!ready || changingQueue) return;
     try {
+      _resumeWanted = true;
+      final epoch = ++_transportEpoch;
       if (current == null) {
         if (entries.isNotEmpty) await advance();
         return;
@@ -1073,15 +1174,26 @@ class RadioController extends ChangeNotifier {
         await persist();
       }
       if (!await prepare(current!)) return;
+      if (!_resumeWanted || epoch != _transportEpoch) return;
       await acquire();
+      if (!_resumeWanted || epoch != _transportEpoch) return;
       _reconnects = 0;
+      _nextRecovery = Duration.zero;
       if (_loadedOccurrence != current!.occurrenceId ||
+          _needsReopen ||
+          buffering ||
           player!.state.playlist.medias.isEmpty ||
           player!.state.completed) {
         await _openCurrent(resume: position);
       } else {
         if (_session != null) await _session!.setActive(true);
+        if (!_resumeWanted || epoch != _transportEpoch) return;
         await player!.play();
+        if (!_resumeWanted || epoch != _transportEpoch) {
+          await player!.pause();
+          return;
+        }
+        _lastProgressAt = _leaseNow();
       }
     } catch (e) {
       fail(e);
@@ -1089,6 +1201,9 @@ class RadioController extends ChangeNotifier {
   }
 
   Future<void> pause() async {
+    _resumeWanted = false;
+    _transportEpoch++;
+    _stableSince = null;
     playing = false;
     _clock.reset();
     if (player != null) await player!.pause();
@@ -1101,6 +1216,7 @@ class RadioController extends ChangeNotifier {
     try {
       await player!.seek(target);
       position = target;
+      _lastProgressAt = _leaseNow();
       await persist();
     } finally {
       _clock.reset();

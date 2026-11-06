@@ -31,11 +31,13 @@ class FakePlayer extends Fake implements mk.Player {
   mk.PlayerState state = const mk.PlayerState();
   final List<mk.Media> opened = [];
   Future<void> Function()? onStop;
+  Future<void> Function()? onOpen;
   @override
   Future<void> open(mk.Playable playable, {bool play = true}) async {
     final media = playable as mk.Media;
     opened.add(media);
     state = mk.PlayerState(playlist: mk.Playlist([media]), playing: play);
+    await onOpen?.call();
   }
 
   @override
@@ -74,12 +76,14 @@ Song song(String id, {bool available = true}) => Song({
 });
 
 class PlayerFixture {
-  final RadioController radio = RadioController(MemoryDisk());
+  late final RadioController radio;
   final FakePlayer player = FakePlayer();
   final List<http.Request> requests = [];
   final Set<String> unmatched = {};
+  Future<void> Function()? onMatch, onLease;
   Future<Map<String, dynamic>> Function(http.Request)? catalog;
-  PlayerFixture() {
+  PlayerFixture({Duration Function()? leaseNow}) {
+    radio = RadioController(MemoryDisk(), leaseNow: leaseNow);
     radio.connected = true;
     radio.player = player;
     radio.api = RadioApi(
@@ -91,6 +95,7 @@ class PlayerFixture {
         final path = request.url.path;
         Map<String, dynamic> result;
         if (path == '/api/match') {
+          await onMatch?.call();
           final source = jsonDecode(request.body);
           result = unmatched.contains(source['video_id'])
               ? {'status': 'skipped', 'reason': 'Ambiguous'}
@@ -122,6 +127,7 @@ class PlayerFixture {
             'sample_rate': 96000,
           };
         } else if (path == '/api/device/lease') {
+          await onLease?.call();
           result = {'active': true};
         } else if (catalog != null) {
           result = await catalog!(request);
