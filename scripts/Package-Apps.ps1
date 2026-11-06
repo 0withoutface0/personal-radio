@@ -16,7 +16,7 @@ $aapt = Get-ChildItem -LiteralPath (Join-Path $androidSdk 'build-tools') -Filter
 if (!$aapt) { throw 'Android SDK aapt2 is required to verify the release APK.' }
 $resources = & $aapt.FullName dump resources $apk
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect Android release resources.' }
-foreach ($icon in @('ic_radio_notification', 'audio_service_play_arrow', 'audio_service_pause', 'audio_service_skip_next', 'audio_service_stop')) {
+foreach ($icon in @('ic_radio_notification', 'ic_radio_like_outline', 'ic_radio_like_filled', 'audio_service_play_arrow', 'audio_service_pause', 'audio_service_skip_next', 'audio_service_stop')) {
     if (!($resources | Select-String -SimpleMatch "drawable/$icon")) {
         throw "Release APK is missing media control icon: $icon"
     }

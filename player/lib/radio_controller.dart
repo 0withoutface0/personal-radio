@@ -1280,18 +1280,22 @@ class RadioController extends ChangeNotifier {
 }
 
 class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
+  static const likeAction = 'personal_radio.like';
   final RadioController radio;
   bool _stopped = true;
   RadioAudioHandler(this.radio) {
+    ratingStyle.add(RatingStyle.heart);
     radio.transportChanged = publish;
     publish();
   }
   void publish() {
     if (radio.playing) _stopped = false;
     final current = radio.current;
+    final liked = radio.currentRating?.value == 'LIKE';
     if (current != null &&
         (mediaItem.value?.id != current.occurrenceId ||
-            mediaItem.value?.duration != radio.duration)) {
+            mediaItem.value?.duration != radio.duration ||
+            mediaItem.value?.rating?.hasHeart() != liked)) {
       mediaItem.add(
         MediaItem(
           id: current.occurrenceId,
@@ -1301,6 +1305,7 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
           duration: radio.duration > Duration.zero
               ? radio.duration
               : current.song.duration,
+          rating: Rating.newHeartRating(liked),
           artUri: current.song.artwork == null
               ? null
               : Uri.tryParse(current.song.artwork!),
@@ -1312,14 +1317,32 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
         controls: [
           radio.playing ? MediaControl.pause : MediaControl.play,
           MediaControl.skipToNext,
+          if (radio.ready &&
+              current?.tidal != null &&
+              current!.song.id.isNotEmpty)
+            MediaControl.custom(
+              androidIcon: liked
+                  ? 'drawable/ic_radio_like_filled'
+                  : 'drawable/ic_radio_like_outline',
+              label: liked ? 'Remove like' : 'Like on YouTube Music and Tidal',
+              name: likeAction,
+              extras: {
+                'occurrence_id': current.occurrenceId,
+                'value': liked ? 'INDIFFERENT' : 'LIKE',
+              },
+            ),
           MediaControl.stop,
         ],
         systemActions: const {
           MediaAction.seek,
           MediaAction.seekForward,
           MediaAction.seekBackward,
+          MediaAction.setRating,
         },
-        androidCompactActionIndices: const [0, 1],
+        androidCompactActionIndices:
+            radio.ready && current?.tidal != null && current!.song.id.isNotEmpty
+            ? const [0, 1, 2]
+            : const [0, 1],
         playing: radio.playing,
         processingState: _stopped || current == null
             ? AudioProcessingState.idle
@@ -1330,6 +1353,35 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
         bufferedPosition: radio.player?.state.buffer ?? Duration.zero,
       ),
     );
+  }
+
+  @override
+  Future<dynamic> customAction(
+    String name, [
+    Map<String, dynamic>? extras,
+  ]) async {
+    if (name != likeAction) return super.customAction(name, extras);
+    final current = radio.current;
+    if (current == null ||
+        extras?['occurrence_id'] != current.occurrenceId ||
+        !['LIKE', 'INDIFFERENT'].contains(extras?['value']))
+      return;
+    final desired = extras!['value'] == 'LIKE';
+    // A repeated/stale PendingIntent must never toggle a second time or rate
+    // a different song after the queue has advanced.
+    if ((radio.currentRating?.value == 'LIKE') != desired)
+      await radio.rate('LIKE');
+  }
+
+  @override
+  Future<void> setRating(Rating rating, [Map<String, dynamic>? extras]) async {
+    if (rating.getRatingStyle() != RatingStyle.heart || !rating.isRated())
+      return;
+    final occurrence = extras?['occurrence_id'] ?? radio.current?.occurrenceId;
+    await customAction(likeAction, {
+      'occurrence_id': occurrence,
+      'value': rating.hasHeart() ? 'LIKE' : 'INDIFFERENT',
+    });
   }
 
   @override
