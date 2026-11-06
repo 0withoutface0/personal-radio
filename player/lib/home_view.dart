@@ -17,17 +17,22 @@ class HomeView extends StatelessWidget {
           .map((x) => Map<String, dynamic>.from(x))
           .toList();
 
-  Widget _art(String? url) => url == null
-      ? const ColoredBox(
-          color: Color(0xFF293023),
-          child: Center(child: Icon(Icons.music_note, color: Colors.white54)),
+  Widget _art(BuildContext context, String? url) => url == null
+      ? ColoredBox(
+          color: Theme.of(context).colorScheme.surfaceContainerHigh,
+          child: Center(
+            child: Icon(
+              Icons.music_note,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
         )
       : Image.network(
           url,
           fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => const ColoredBox(
-            color: Color(0xFF293023),
-            child: Center(child: Icon(Icons.music_note)),
+          errorBuilder: (_, _, _) => ColoredBox(
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+            child: const Center(child: Icon(Icons.music_note)),
           ),
         );
 
@@ -39,7 +44,7 @@ class HomeView extends StatelessWidget {
     }
   }
 
-  Widget _tile(Map<String, dynamic> item) {
+  Widget _tile(BuildContext context, Map<String, dynamic> item) {
     final song = item['song'] is Map
         ? Song(Map<String, dynamic>.from(item['song']))
         : null;
@@ -51,7 +56,7 @@ class HomeView extends StatelessWidget {
         message: '${song == null ? 'Open' : 'Play'} ${item['title']}',
         triggerMode: TooltipTriggerMode.manual,
         child: Material(
-          color: const Color(0xFF293023),
+          color: Theme.of(context).colorScheme.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(12),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
@@ -59,7 +64,7 @@ class HomeView extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                _art(item['artwork']),
+                _art(context, item['artwork']),
                 const DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -81,13 +86,18 @@ class HomeView extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
+                            color: Colors.white,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
                       if (song == null)
-                        const Icon(Icons.chevron_right, size: 16),
+                        const Icon(
+                          Icons.chevron_right,
+                          size: 16,
+                          color: Colors.white,
+                        ),
                     ],
                   ),
                 ),
@@ -99,7 +109,7 @@ class HomeView extends StatelessWidget {
     );
   }
 
-  Widget _pick(Map<String, dynamic> item) {
+  Widget _pick(BuildContext context, Map<String, dynamic> item) {
     final song = Song(Map<String, dynamic>.from(item['song']));
     return SongActions(
       radio: radio,
@@ -109,7 +119,11 @@ class HomeView extends StatelessWidget {
         contentPadding: const EdgeInsets.only(right: 2),
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: SizedBox(width: 48, height: 48, child: _art(song.artwork)),
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: _art(context, song.artwork),
+          ),
         ),
         title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text(
@@ -125,12 +139,12 @@ class HomeView extends StatelessWidget {
     );
   }
 
-  Widget _empty(String section) => Padding(
+  Widget _empty(BuildContext context, String section) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 12),
     child: Text(
       radio.home?[section]?['message'] ??
           'Refresh home to load your YouTube Music recommendations.',
-      style: const TextStyle(color: Colors.white54),
+      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
     ),
   );
 
@@ -149,10 +163,13 @@ class HomeView extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
                   'From your YouTube Music',
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
                 ),
               ),
               IconButton(
@@ -170,7 +187,7 @@ class HomeView extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Text(
                 '${radio.homeError}${radio.home == null ? '' : '\nShowing your previous recommendations.'}',
-                style: const TextStyle(color: Colors.orangeAccent),
+                style: TextStyle(color: Theme.of(context).colorScheme.tertiary),
               ),
             ),
           const SizedBox(height: 8),
@@ -179,14 +196,14 @@ class HomeView extends StatelessWidget {
               'Speed dial',
               style: TextStyle(fontSize: 23, fontWeight: FontWeight.w700),
             ),
-            _empty('speed_dial'),
+            _empty(context, 'speed_dial'),
           ] else
             _SpeedDialGrid(
               key: ValueKey(
                 speed.map((x) => x['play_id'] ?? x['id']).join('|'),
               ),
               items: speed,
-              tile: _tile,
+              tile: (item) => _tile(context, item),
             ),
           const SizedBox(height: 24),
           Row(
@@ -213,7 +230,7 @@ class HomeView extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           if (picks.isEmpty)
-            _empty('quick_picks')
+            _empty(context, 'quick_picks')
           else
             LayoutBuilder(
               builder: (context, constraints) {
@@ -228,7 +245,7 @@ class HomeView extends StatelessWidget {
                       child: Column(
                         children: [
                           for (final item in picks.skip(column * 4).take(4))
-                            SizedBox(height: 76, child: _pick(item)),
+                            SizedBox(height: 76, child: _pick(context, item)),
                         ],
                       ),
                     ),
@@ -339,7 +356,10 @@ class _SpeedDialGridState extends State<_SpeedDialGrid> {
                   child: Text(
                     '${page + 1} / $pages',
                     semanticsLabel: 'Speed dial page ${page + 1} of $pages',
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
             ],

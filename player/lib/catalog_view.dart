@@ -29,6 +29,7 @@ class CatalogView extends StatefulWidget {
 
 class CatalogViewState extends State<CatalogView> {
   RadioController get r => widget.radio;
+  ColorScheme get colors => Theme.of(context).colorScheme;
   final List<_BrowsePage> _pages = [];
   String _kind = 'songs';
   bool _loading = false;
@@ -140,9 +141,9 @@ class CatalogViewState extends State<CatalogView> {
       width: size,
       height: size,
       child: url == null
-          ? const ColoredBox(
-              color: Color(0xFF293023),
-              child: Icon(Icons.music_note),
+          ? ColoredBox(
+              color: colors.surfaceContainerHigh,
+              child: const Icon(Icons.music_note),
             )
           : Image.network(
               url,
@@ -224,9 +225,9 @@ class CatalogViewState extends State<CatalogView> {
       ),
       if (!_home) ...[
         const SizedBox(height: 10),
-        const Text(
+        Text(
           'Play a song, explore an album, or let your radio take over.',
-          style: TextStyle(color: Colors.white54),
+          style: TextStyle(color: colors.onSurfaceVariant),
         ),
       ],
       const SizedBox(height: 20),
@@ -331,7 +332,7 @@ class CatalogViewState extends State<CatalogView> {
             Expanded(
               child: Text(
                 page.kind == 'artist' ? 'Artist' : 'Album',
-                style: const TextStyle(color: Colors.white54),
+                style: TextStyle(color: colors.onSurfaceVariant),
               ),
             ),
             IconButton(
@@ -369,7 +370,7 @@ class CatalogViewState extends State<CatalogView> {
                   if (data['year'] != null)
                     Text(
                       data['year'].toString(),
-                      style: const TextStyle(color: Colors.white54),
+                      style: TextStyle(color: colors.onSurfaceVariant),
                     ),
                 ],
               ),

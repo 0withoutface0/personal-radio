@@ -2,47 +2,87 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:dynamic_color/dynamic_color.dart';
 
+import 'appearance.dart';
+import 'appearance_dialog.dart';
 import 'catalog_view.dart';
 import 'models.dart';
 import 'radio_controller.dart';
 import 'song_actions.dart';
 
-const lime = Color(0xFFD5F887),
-    ink = Color(0xFF111410),
-    panel = Color(0xFF1C211B);
-
-class RadioApp extends StatelessWidget {
+class RadioApp extends StatefulWidget {
   final RadioController radio;
   const RadioApp({super.key, required this.radio});
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Personal Radio',
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.dark,
-      scaffoldBackgroundColor: ink,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: lime,
-        brightness: Brightness.dark,
-      ).copyWith(primary: lime, onPrimary: ink, surface: panel),
-      fontFamily: 'Segoe UI',
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: panel,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
-        ),
+  State<RadioApp> createState() => _RadioAppState();
+}
+
+class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
+  final dynamicKey = GlobalKey<DynamicColorBuilderState>();
+  late RadioAppearance appearance;
+  @override
+  void initState() {
+    super.initState();
+    appearance = widget.radio.appearance;
+    widget.radio.addListener(changed);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  void changed() {
+    if (widget.radio.appearance != appearance) {
+      setState(() => appearance = widget.radio.appearance);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant RadioApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.radio != widget.radio) {
+      oldWidget.radio.removeListener(changed);
+      widget.radio.addListener(changed);
+      appearance = widget.radio.appearance;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      dynamicKey.currentState?.initPlatformState();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.radio.removeListener(changed);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => DynamicColorBuilder(
+    key: dynamicKey,
+    builder: (light, dark) => MaterialApp(
+      title: 'Personal Radio',
+      debugShowCheckedModeBanner: false,
+      themeMode: appearance.mode,
+      theme: radioTheme(appearance.palette, Brightness.light, light),
+      darkTheme: radioTheme(appearance.palette, Brightness.dark, dark),
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value:
+            (Theme.of(context).brightness == Brightness.dark
+                    ? SystemUiOverlayStyle.light
+                    : SystemUiOverlayStyle.dark)
+                .copyWith(
+                  statusBarColor: Colors.transparent,
+                  systemNavigationBarColor: Theme.of(context)
+                      .colorScheme
+                      .surface,
+                ),
+        child: child!,
       ),
-      cardTheme: CardThemeData(
-        color: panel,
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      ),
+      home: RadioHome(radio: widget.radio),
     ),
-    home: RadioHome(radio: radio),
   );
 }
 
@@ -55,12 +95,19 @@ class RadioHome extends StatefulWidget {
 
 class _RadioHomeState extends State<RadioHome> {
   RadioController get r => widget.radio;
+  ColorScheme get colors => Theme.of(context).colorScheme;
+  Color get lime => colors.primary;
+  Color get ink => colors.onPrimary;
+  Color get panel => colors.surfaceContainer;
+  Color get muted => colors.onSurfaceVariant;
+  Color get soft => colors.onSurfaceVariant;
+  Color get outline => colors.outlineVariant;
   int tab = 0;
   final catalogKey = GlobalKey<CatalogViewState>();
   double? draggingPosition;
   final search = TextEditingController(), focus = FocusNode();
-  final labels = const ['Discover', 'Stations', 'Queue', 'Listening'];
-  final icons = const [
+  final labels = ['Discover', 'Stations', 'Queue', 'Listening'];
+  final icons = [
     Icons.search_rounded,
     Icons.radio_rounded,
     Icons.queue_music_rounded,
@@ -109,7 +156,7 @@ class _RadioHomeState extends State<RadioHome> {
                               color: lime,
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: const Icon(Icons.graphic_eq, color: ink),
+                            child: Icon(Icons.graphic_eq, color: ink),
                           ),
                           const SizedBox(width: 12),
                           const Expanded(
@@ -127,10 +174,7 @@ class _RadioHomeState extends State<RadioHome> {
                           if (wide)
                             Text(
                               r.connectionMessage ?? 'Connect your server',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.white54,
-                              ),
+                              style: TextStyle(fontSize: 12, color: muted),
                             ),
                           IconButton(
                             tooltip: 'Connection settings',
@@ -142,7 +186,7 @@ class _RadioHomeState extends State<RadioHome> {
                     ),
                     if (r.error != null)
                       Container(
-                        color: const Color(0xFF463421),
+                        color: colors.errorContainer,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 4,
@@ -237,7 +281,7 @@ class _RadioHomeState extends State<RadioHome> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.radio_rounded, size: 66, color: lime),
+            Icon(Icons.radio_rounded, size: 66, color: lime),
             const SizedBox(height: 24),
             const Text(
               'A radio that knows you.',
@@ -248,13 +292,9 @@ class _RadioHomeState extends State<RadioHome> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Your YouTube Music recommendations, played from Tidal in lossless quality.',
-              style: TextStyle(
-                color: Colors.white60,
-                fontSize: 16,
-                height: 1.6,
-              ),
+              style: TextStyle(color: muted, fontSize: 16, height: 1.6),
             ),
             const SizedBox(height: 28),
             FilledButton.icon(
@@ -266,9 +306,9 @@ class _RadioHomeState extends State<RadioHome> {
               ),
             ),
             const SizedBox(height: 18),
-            const Text(
+            Text(
               'Use your private server address and device access token. Provider accounts stay on the server.',
-              style: TextStyle(color: Colors.white38, height: 1.5),
+              style: TextStyle(color: soft, height: 1.5),
             ),
           ],
         ),
@@ -278,8 +318,8 @@ class _RadioHomeState extends State<RadioHome> {
   Widget sidebar() => Container(
     width: 190,
     padding: const EdgeInsets.fromLTRB(16, 22, 12, 20),
-    decoration: const BoxDecoration(
-      border: Border(right: BorderSide(color: Colors.white10)),
+    decoration: BoxDecoration(
+      border: Border(right: BorderSide(color: outline)),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -302,11 +342,11 @@ class _RadioHomeState extends State<RadioHome> {
           ),
         ),
         const Spacer(),
-        const Text(
+        Text(
           'YOUTUBE MUSIC\n× TIDAL',
           style: TextStyle(
             fontSize: 12,
-            color: Colors.white38,
+            color: soft,
             letterSpacing: 2,
             height: 1.8,
           ),
@@ -316,7 +356,7 @@ class _RadioHomeState extends State<RadioHome> {
           r.outbox.isEmpty
               ? 'Listening events synced'
               : '${r.outbox.length} events saved locally',
-          style: const TextStyle(color: Colors.white38, fontSize: 11),
+          style: TextStyle(color: soft, fontSize: 11),
         ),
       ],
     ),
@@ -328,7 +368,7 @@ class _RadioHomeState extends State<RadioHome> {
       children: [
         Text(
           eyebrow.toUpperCase(),
-          style: const TextStyle(
+          style: TextStyle(
             color: lime,
             fontSize: 11,
             fontWeight: FontWeight.w600,
@@ -347,10 +387,7 @@ class _RadioHomeState extends State<RadioHome> {
         if (subtitle != null)
           Padding(
             padding: const EdgeInsets.only(top: 10),
-            child: Text(
-              subtitle,
-              style: const TextStyle(color: Colors.white54, height: 1.5),
-            ),
+            child: Text(subtitle, style: TextStyle(color: muted, height: 1.5)),
           ),
       ],
     ),
@@ -381,10 +418,10 @@ class _RadioHomeState extends State<RadioHome> {
       ),
       Expanded(
         child: r.stations.isEmpty
-            ? const Center(
+            ? Center(
                 child: Text(
                   'No stations found yet. Refresh to check your account.',
-                  style: TextStyle(color: Colors.white54),
+                  style: TextStyle(color: muted),
                 ),
               )
             : ListView.builder(
@@ -395,7 +432,7 @@ class _RadioHomeState extends State<RadioHome> {
                     margin: const EdgeInsets.only(bottom: 12),
                     child: ListTile(
                       contentPadding: const EdgeInsets.all(18),
-                      leading: const Icon(Icons.radio, color: lime),
+                      leading: Icon(Icons.radio, color: lime),
                       title: Text(s['title'] ?? 'Station'),
                       subtitle: Text(s['section'] ?? ''),
                       trailing: const Icon(Icons.play_arrow_rounded),
@@ -441,10 +478,10 @@ class _RadioHomeState extends State<RadioHome> {
         ),
       Expanded(
         child: r.entries.isEmpty
-            ? const Center(
+            ? Center(
                 child: Text(
                   'Start with a song or station.',
-                  style: TextStyle(color: Colors.white38),
+                  style: TextStyle(color: soft),
                 ),
               )
             : ListView.builder(
@@ -483,7 +520,7 @@ class _RadioHomeState extends State<RadioHome> {
                         ),
                         child: ListTile(
                           leading: active
-                              ? const Icon(Icons.graphic_eq, color: lime)
+                              ? Icon(Icons.graphic_eq, color: lime)
                               : skipped
                               ? const Icon(
                                   Icons.not_interested,
@@ -502,10 +539,7 @@ class _RadioHomeState extends State<RadioHome> {
                                 : '${entry.song.artist}${entry.addedByUser ? ' · Added by you' : ''}${entry.tidal != null ? ' · Matched' : ''}',
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white54,
-                              fontSize: 12,
-                            ),
+                            style: TextStyle(color: muted, fontSize: 12),
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -568,16 +602,13 @@ class _RadioHomeState extends State<RadioHome> {
                     children: [
                       Text(
                         (seconds / 60).toStringAsFixed(1),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 42,
                           fontWeight: FontWeight.w300,
                           color: lime,
                         ),
                       ),
-                      const Text(
-                        'minutes listened',
-                        style: TextStyle(color: Colors.white54),
-                      ),
+                      Text('minutes listened', style: TextStyle(color: muted)),
                     ],
                   ),
                   Column(
@@ -586,10 +617,7 @@ class _RadioHomeState extends State<RadioHome> {
                         '${totals?['occurrences'] ?? 0}',
                         style: const TextStyle(fontSize: 30),
                       ),
-                      const Text(
-                        'plays started',
-                        style: TextStyle(color: Colors.white54),
-                      ),
+                      Text('plays started', style: TextStyle(color: muted)),
                     ],
                   ),
                 ],
@@ -597,10 +625,10 @@ class _RadioHomeState extends State<RadioHome> {
             ),
           ),
           const SizedBox(height: 18),
-          const ListTile(
+          ListTile(
             leading: Icon(Icons.info_outline, color: lime),
-            title: Text('YouTube Recap remains unverified'),
-            subtitle: Text(
+            title: const Text('YouTube Recap remains unverified'),
+            subtitle: const Text(
               'History submission and Recap eligibility are separate results.',
             ),
           ),
@@ -611,7 +639,7 @@ class _RadioHomeState extends State<RadioHome> {
               child: const Text('Sync now'),
             ),
           ),
-          const Divider(color: Colors.white10),
+          Divider(color: outline),
           const ListTile(title: Text('Top artists')),
           for (final row in report?['top_artists'] as List? ?? [])
             ListTile(
@@ -629,7 +657,7 @@ class _RadioHomeState extends State<RadioHome> {
                 '${((row['listened_seconds'] as num) / 60).toStringAsFixed(1)} min',
               ),
             ),
-          const Divider(color: Colors.white10),
+          Divider(color: outline),
           const ListTile(title: Text('Activity reporting')),
           if (submissions.isEmpty)
             const ListTile(
@@ -671,9 +699,9 @@ class _RadioHomeState extends State<RadioHome> {
     child: Container(
       width: size,
       height: size,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF64754B), Color(0xFF242E24)],
+          colors: [colors.primaryContainer, colors.surfaceContainerHigh],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -703,7 +731,7 @@ class _RadioHomeState extends State<RadioHome> {
             verified
                 ? 'FLAC  ·  ${q!['bit_depth']}-bit / ${((q['sample_rate'] as num) / 1000).toStringAsFixed(1)} kHz'
                 : 'LOSSLESS FLAC',
-            style: const TextStyle(
+            style: TextStyle(
               color: lime,
               fontSize: 11,
               fontWeight: FontWeight.w600,
@@ -715,7 +743,7 @@ class _RadioHomeState extends State<RadioHome> {
           verified
               ? 'Verified source stream'
               : 'Source resolution not yet verified',
-          style: const TextStyle(color: Colors.white38, fontSize: 10),
+          style: TextStyle(color: soft, fontSize: 10),
         ),
       ],
     );
@@ -745,11 +773,11 @@ class _RadioHomeState extends State<RadioHome> {
           children: [
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'NOW PLAYING',
                     style: TextStyle(
-                      color: Colors.white38,
+                      color: soft,
                       fontSize: 10,
                       letterSpacing: 2,
                     ),
@@ -770,7 +798,7 @@ class _RadioHomeState extends State<RadioHome> {
             const SizedBox(height: 8),
             Text(
               r.current?.song.artist ?? 'Choose a song to begin.',
-              style: const TextStyle(color: Colors.white54, height: 1.5),
+              style: TextStyle(color: muted, height: 1.5),
             ),
             const SizedBox(height: 22),
             quality(),
@@ -785,7 +813,7 @@ class _RadioHomeState extends State<RadioHome> {
                     isSelected: r.currentRating?.value == 'LIKE',
                     color: r.currentRating?.value == 'LIKE'
                         ? lime
-                        : Colors.white70,
+                        : colors.onSurface,
                     onPressed: r.ready && r.current!.tidal != null
                         ? () => r.rate('LIKE')
                         : null,
@@ -799,7 +827,7 @@ class _RadioHomeState extends State<RadioHome> {
                     isSelected: r.currentRating?.value == 'DISLIKE',
                     color: r.currentRating?.value == 'DISLIKE'
                         ? lime
-                        : Colors.white70,
+                        : colors.onSurface,
                     onPressed: r.ready && r.current!.tidal != null
                         ? () => r.rate('DISLIKE')
                         : null,
@@ -807,10 +835,7 @@ class _RadioHomeState extends State<RadioHome> {
                     selectedIcon: const Icon(Icons.thumb_down),
                   ),
                   const Spacer(),
-                  Text(
-                    timeLabel(r.duration),
-                    style: const TextStyle(color: Colors.white38),
-                  ),
+                  Text(timeLabel(r.duration), style: TextStyle(color: soft)),
                 ],
               ),
               if (r.currentRating != null)
@@ -825,7 +850,7 @@ class _RadioHomeState extends State<RadioHome> {
                         height: 1.4,
                         color: r.currentRating!.uncertain
                             ? Colors.orangeAccent
-                            : Colors.white54,
+                            : muted,
                       ),
                     ),
                   ),
@@ -833,15 +858,11 @@ class _RadioHomeState extends State<RadioHome> {
               seekBar(),
             ],
             const SizedBox(height: 14),
-            const Divider(color: Colors.white10),
+            Divider(color: outline),
             const SizedBox(height: 14),
             Text(
               r.queueTitle,
-              style: const TextStyle(
-                color: Colors.white38,
-                fontSize: 12,
-                height: 1.6,
-              ),
+              style: TextStyle(color: soft, fontSize: 12, height: 1.6),
             ),
           ],
         ),
@@ -868,11 +889,11 @@ class _RadioHomeState extends State<RadioHome> {
         children: [
           Text(
             timeLabel(r.position),
-            style: const TextStyle(fontSize: 11, color: Colors.white54),
+            style: TextStyle(fontSize: 11, color: muted),
           ),
           Text(
             timeLabel(r.duration),
-            style: const TextStyle(fontSize: 11, color: Colors.white54),
+            style: TextStyle(fontSize: 11, color: muted),
           ),
         ],
       ),
@@ -883,9 +904,9 @@ class _RadioHomeState extends State<RadioHome> {
     song: r.current!.song,
     onBrowse: browse,
     builder: (_) => Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: panel,
-        border: Border(top: BorderSide(color: Colors.white10)),
+        border: Border(top: BorderSide(color: outline)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
       child: Row(
@@ -919,7 +940,7 @@ class _RadioHomeState extends State<RadioHome> {
                     r.current!.song.artist,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                    style: TextStyle(color: muted, fontSize: 11),
                   ),
                 ],
               ),
@@ -933,7 +954,7 @@ class _RadioHomeState extends State<RadioHome> {
             tooltip: r.playing ? 'Pause' : 'Play',
             onPressed: r.playing ? r.pause : r.play,
             icon: r.buffering
-                ? const SizedBox(
+                ? SizedBox(
                     width: 22,
                     height: 22,
                     child: CircularProgressIndicator(
@@ -1061,13 +1082,26 @@ class _RadioHomeState extends State<RadioHome> {
       context: context,
       builder: (dialog) => StatefulBuilder(
         builder: (c, setDialog) => AlertDialog(
-          title: const Text('Connect your server'),
+          title: const Text('Settings'),
+          scrollable: true,
           content: SizedBox(
             width: 420,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.palette_outlined),
+                  title: const Text('Appearance'),
+                  subtitle: Text(r.appearance.palette.label),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    await showAppearanceDialog(dialog, r);
+                    if (c.mounted) setDialog(() {});
+                  },
+                ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: address,
                   autocorrect: false,
@@ -1087,13 +1121,9 @@ class _RadioHomeState extends State<RadioHome> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Text(
+                Text(
                   'The token is in data/device-token.txt on your server. Connect this device to Tailscale before using a remote server.',
-                  style: TextStyle(
-                    color: Colors.white54,
-                    fontSize: 12,
-                    height: 1.6,
-                  ),
+                  style: TextStyle(color: muted, fontSize: 12, height: 1.6),
                 ),
                 if (failure != null)
                   Padding(

@@ -8,6 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 
 import 'api.dart';
+import 'appearance.dart';
 import 'disk.dart';
 import 'models.dart';
 import 'playback_network.dart';
@@ -51,6 +52,7 @@ class RadioController extends ChangeNotifier {
       buffering = false,
       hasLease = false;
   double volume = 80;
+  RadioAppearance appearance = const RadioAppearance();
   Duration position = Duration.zero, duration = Duration.zero;
   List<Song> results = [];
   List<Map<String, dynamic>> catalogResults = [];
@@ -90,8 +92,22 @@ class RadioController extends ChangeNotifier {
     'entries': entries.map((e) => e.toJson()).toList(),
     'outbox': outbox,
     'ratings': ratings.map((id, value) => MapEntry(id, value.toJson())),
+    'appearance': appearance.toJson(),
   };
   Future<void> persist() => disk.save(snapshot());
+  Future<void> setAppearance(RadioAppearance value) async {
+    final previous = appearance;
+    appearance = value;
+    update();
+    try {
+      await persist();
+    } catch (_) {
+      if (appearance == value) appearance = previous;
+      update();
+      rethrow;
+    }
+  }
+
   void update() {
     if (!_disposed) {
       notifyListeners();
@@ -108,6 +124,7 @@ class RadioController extends ChangeNotifier {
 
   Future<void> initialize() async {
     final saved = await disk.load();
+    appearance = RadioAppearance.fromJson(saved['appearance']);
     deviceId = saved['device_id'] ?? deviceId;
     origin = saved['origin'] ?? origin;
     mode = saved['mode'] ?? mode;
