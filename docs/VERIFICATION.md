@@ -1,11 +1,15 @@
 # Verification status
 
-Version 0.3.1 is an early release. The Windows executable, signed Android APK and Linux Docker image are distributed separately from private account state. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
+Version 0.4.0 is an early release. The Windows executable, signed Android APK and Linux Docker image are distributed separately from private account state. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
 
-Automated checks: **153 Python tests** (server API 0.4.1), **85 Flutter unit/widget tests** (unchanged v0.3.1 player), clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
+Automated checks: **153 Python tests** (server API 0.4.1), **104 Flutter unit/widget tests** (v0.4.0 player), clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
 
 | Check | Evidence / status |
 | --- | --- |
+| Material You / themes | Defaults, OS brightness, resume refresh, preset persistence and phone/Windows layouts pass widget tests; Android 16 native Monet palette and Original green selection verified with the real dynamic-color plugin |
+| Android media Like | Native foreground service active and MediaSession exposes Remove like after the fixture Like; actual dual-service requests mocked. Unit tests verify clear, offline persistence and stale/duplicate delivery. Physical OEM action visibility remains an acceptance check |
+| Prepared next-track handoff | Native Windows generated PCM and 24-bit/96kHz FLAC HLS tests fetch authenticated next audio before EOF, advance through the native playlist without another stream resolution, and preserve occurrence registration order. The same PCM and Hi-Res HLS checks pass on the Android 16 emulator |
+| Preload cancellation | Queue insertion/removal, late responses, skips, pause, seek, uncertain matches and durable registration/ratings ordering covered by fake-transport tests. Native prefetch errors leave healthy current audio alone; expired leases block handoff |
 | Partial counterpart metadata | Empty or omitted artists on YouTube's optional counterpart accepted without weakening primary artist, explicit/clean or size constraints. Live read-only verification matched the reported Speed dial and search song to the same Tidal recording; no playback events or ratings created |
 | Cellular outage recovery | Fake transport covers stalled headers/body, aborted requests without automatic mutation replay, serialized heartbeats, bounded lease grace, takeover, retries, saved occurrences/position and pause/skip cancellation |
 | Native network buffering | Windows native integration check passed with generated silence and a deliberately stalled loopback HTTP socket; confirmed memory cache settings and advancing playback during the stall; no accounts or activity reporting used |

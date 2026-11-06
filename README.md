@@ -2,6 +2,8 @@
 
 YouTube Music recommendations, played through matching lossless recordings from Tidal. A personal radio player for **Windows and Android**, with a **Python/FastAPI server** you can host on Linux with Docker and reach through Tailscale.
 
+The player follows your system colors and light/dark appearance by default, including Android Material You/Monet. Choose **Settings > Appearance** for Original green, Ocean, Violet, Rose or Amber. It also prepares the next lossless queue track before the current one ends, and Android media controls include a Like action for both services.
+
 Use your own YouTube Music and Tidal subscriptions. Provider credentials stay on your server; the players connect with a separate device token. This project uses unofficial integrations and is not affiliated with either service.
 
 ## What it does

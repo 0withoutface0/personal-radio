@@ -70,7 +70,7 @@ The player resolves and appends the next confident queue occurrence during the f
 
 Preloading never registers an unheard occurrence or reports listening. At actual native advancement, the same queued occurrence ID is registered through the durable outbox ahead of its playback events and ratings; API retries cannot create another occurrence. Natural completion of the old track is recorded once, and manual skipping remains a skip. Radio/Autoplay order and station cursors stay intact.
 
-Network playback keeps up to 90 seconds ahead, bounded by a 96 MiB forward-cache cap; high-resolution sources can hit the byte limit sooner. Temporary audio stays in memory, with a separate 8 MiB back-cache cap. No audio is saved as an offline download. The native player allows ten seconds for an inactive network read and buffers three seconds when resuming after starvation. This improves tolerance of interruptions but cannot supply audio during an extended outage. See [cellular and Tailscale troubleshooting](https://github.com/0withoutface0/youtube-tidal-radio/blob/main/docs/NETWORK.md) if other apps also stall. The Python server/API and stored state are unchanged from v0.3.0.
+Each stream keeps up to 90 seconds ahead, bounded by a 96 MiB forward-cache cap; preparing the next stream can use a second native cache, and high-resolution sources can hit the byte limit sooner. Temporary audio stays in memory, with a separate 8 MiB back-cache cap. No audio is saved as an offline download. The native player allows ten seconds for an inactive network read and buffers three seconds when resuming after starvation. This improves tolerance of interruptions but cannot supply audio during an extended outage. See [cellular and Tailscale troubleshooting](https://github.com/0withoutface0/youtube-tidal-radio/blob/main/docs/NETWORK.md) if other apps also stall. Server API 0.4.1 remains compatible, and existing saved queues and pending events are retained.
 
 Pending events are local until the server acknowledges them. The Listening screen distinguishes provider submissions and uncertain outcomes. Eligible history reports start after 30 seconds, or natural completion of a shorter track with essentially all its time heard. Provider mutations with ambiguous outcomes are never blindly retried. Recap inclusion remains unverified.
 
@@ -127,3 +127,12 @@ The account-free native preloading check uses generated PCM and 24-bit/96kHz FLA
 ```powershell
 flutter test integration_test/preload_fixture_test.dart -d windows
 ```
+
+Android 12+ Monet and the real media service can also be checked without provider accounts on an Android emulator:
+
+```powershell
+flutter test integration_test/android_features_fixture_test.dart -d YOUR_EMULATOR
+flutter test integration_test/preload_fixture_test.dart -d YOUR_EMULATOR
+```
+
+The first test uses a fake transport/API, checks the native wallpaper palette and selected green theme, and publishes a fixture Like through the foreground media service. The second plays generated local silence, including Hi-Res FLAC HLS; no real history or ratings are sent. Physical headset and OEM notification layout checks remain separate.

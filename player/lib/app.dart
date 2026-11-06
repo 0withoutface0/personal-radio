@@ -1141,7 +1141,7 @@ class _RadioHomeState extends State<RadioHome> {
               onPressed: () => showLicensePage(
                 context: dialog,
                 applicationName: 'Personal Radio',
-                applicationVersion: '0.1.1',
+                applicationVersion: '0.4.0',
               ),
               child: const Text('Licenses'),
             ),
