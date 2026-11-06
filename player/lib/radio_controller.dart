@@ -29,7 +29,11 @@ class RadioController extends ChangeNotifier {
       _prefetching = false,
       _seeking = false;
   bool _interruptedPlaying = false, _opening = false, _disposed = false;
-  int _generation = 0, _heartbeat = 0, _reconnects = 0;
+  int _generation = 0, _reconnects = 0;
+  bool _renewingLease = false;
+  Duration? _leaseValidUntil;
+  Duration _nextLeaseHeartbeat = Duration.zero;
+  late final Duration Function() _leaseNow;
   String deviceId = ids.v4(), origin = 'http://127.0.0.1:8765', token = '';
   String? nextCursor;
   String? _loadedOccurrence;
@@ -65,7 +69,9 @@ class RadioController extends ChangeNotifier {
       : null;
   bool get ready => api != null && connected;
   bool get changingQueue => busy || _advancing || _opening;
-  RadioController(this.disk);
+  RadioController(this.disk, {Duration Function()? leaseNow}) {
+    _leaseNow = leaseNow ?? () => _time.elapsed;
+  }
 
   Map<String, dynamic> snapshot() => {
     'version': 2,
@@ -411,11 +417,60 @@ class RadioController extends ChangeNotifier {
   }
 
   Future<void> acquire({bool force = false}) async {
-    await api!.call(
+    final client = api!;
+    final started = _leaseNow();
+    final response = await client.call(
       '/api/device/lease',
       body: {'device_id': deviceId, 'force': force},
+      timeout: const Duration(seconds: 5),
     );
+    if (!identical(client, api)) return;
+    // Count from request start, with five seconds of margin before the
+    // server's 25-second lease expires. Never extend it on a failed request.
+    final seconds = ((response['lease_seconds'] as num?)?.toInt() ?? 25);
+    _leaseValidUntil = started + Duration(seconds: (seconds - 5).clamp(0, 20));
+    _nextLeaseHeartbeat = started + const Duration(seconds: 6);
     hasLease = true;
+  }
+
+  /// Preserve buffered playback through a brief failed control request, while
+  /// stopping before the confirmed lease expires or immediately on takeover.
+  Future<void> maintainPlaybackLease() async {
+    if (!ready || !hasLease || (!playing && !buffering)) return;
+    Future<void> stop(Object failure) async {
+      hasLease = false;
+      await pause();
+      fail(failure);
+    }
+
+    bool expired() =>
+        _leaseValidUntil == null || _leaseNow() >= _leaseValidUntil!;
+    if (expired()) {
+      await stop(
+        ApiFailure(
+          0,
+          'Server connection lost. Press play to reconnect at the saved position.',
+        ),
+      );
+      return;
+    }
+    if (_renewingLease || _leaseNow() < _nextLeaseHeartbeat) return;
+    _renewingLease = true;
+    _nextLeaseHeartbeat = _leaseNow() + const Duration(seconds: 6);
+    final client = api;
+    try {
+      await acquire();
+    } catch (e) {
+      if (!identical(client, api) || !hasLease) return;
+      if (e is ApiFailure && [401, 403, 409].contains(e.status) || expired()) {
+        await stop(e);
+      } else {
+        connectionMessage = 'Connection interrupted · retrying';
+        update();
+      }
+    } finally {
+      _renewingLease = false;
+    }
   }
 
   Future<void> start({
@@ -999,15 +1054,7 @@ class RadioController extends ChangeNotifier {
   Future<void> _background() async {
     if (!ready) return;
     if (!_draining) unawaited(sync());
-    if (++_heartbeat % 3 == 0 && hasLease && (playing || buffering)) {
-      try {
-        await acquire();
-      } catch (e) {
-        await pause();
-        hasLease = false;
-        fail(e);
-      }
-    }
+    await maintainPlaybackLease();
   }
 
   Future<void> play() async {

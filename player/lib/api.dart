@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -54,16 +55,28 @@ class RadioApi {
     String path, {
     Map<String, dynamic>? body,
     String method = 'POST',
+    Duration timeout = const Duration(seconds: 45),
   }) async {
-    final request = http.Request(
+    final abort = Completer<void>();
+    final request = http.AbortableRequest(
       body == null && method == 'POST' ? 'GET' : method,
       Uri.parse('$origin$path'),
+      abortTrigger: abort.future,
     );
     request.headers.addAll({...headers, 'Content-Type': 'application/json'});
     if (body != null) request.body = jsonEncode(body);
-    final response = await http.Response.fromStream(
-      await _client.send(request).timeout(const Duration(seconds: 45)),
-    );
+    // Bound both response headers and body with one deadline. A connected
+    // socket can stop delivering bytes after a cellular network change.
+    final response =
+        await (() async => http.Response.fromStream(
+          await _client.send(request),
+        ))().timeout(
+          timeout,
+          onTimeout: () {
+            abort.complete();
+            throw TimeoutException('Server request timed out.', timeout);
+          },
+        );
     dynamic data;
     try {
       data = jsonDecode(response.body);
