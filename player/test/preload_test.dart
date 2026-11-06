@@ -171,6 +171,72 @@ void main() {
     expect(r.current!.song.id, 'one');
   });
 
+  test('a confirmed takeover during preloading pauses immediately', () async {
+    await start();
+    f.onLease = () async => throw ApiFailure(409, 'fixture takeover');
+    await f.radio.preloadNext();
+    expect(f.player.state.playing, false);
+    expect(f.radio.hasLease, false);
+    expect(f.radio.current!.song.id, 'one');
+    expect(f.radio.error, contains('takeover'));
+    expect(f.radio.outbox, isEmpty);
+  });
+
+  test(
+    'native handoff stops when the confirmed playback lease expired',
+    () async {
+      var now = Duration.zero;
+      final isolated = PlayerFixture(leaseNow: () => now);
+      addTearDown(isolated.dispose);
+      final r = isolated.radio;
+      await r.playSongs([song('one'), song('two')]);
+      r.position = const Duration(seconds: 170);
+      await r.preloadNext();
+      now = const Duration(seconds: 21);
+      isolated.player.state = isolated.player.state.copyWith(
+        playlist: mk.Playlist(isolated.player.state.playlist.medias, index: 1),
+      );
+      await r.handlePlaylist(isolated.player.state.playlist);
+      expect(r.currentIndex, 0);
+      expect(isolated.player.state.playing, false);
+      expect(r.outbox, isEmpty);
+      expect(
+        isolated.requests.where((q) => q.url.path == '/api/occurrences'),
+        hasLength(1),
+      );
+    },
+  );
+
+  test(
+    'native future-entry errors do not reopen healthy current playback',
+    () async {
+      var now = Duration.zero;
+      final isolated = PlayerFixture(leaseNow: () => now);
+      addTearDown(isolated.dispose);
+      await isolated.radio.playSongs([song('one'), song('two')]);
+      now = const Duration(seconds: 1);
+      await isolated.radio.handleAudioError();
+      expect(isolated.player.opened, hasLength(1));
+      expect(isolated.player.state.playing, true);
+      expect(isolated.radio.current!.song.id, 'one');
+      expect(isolated.radio.outbox, isEmpty);
+    },
+  );
+
+  test(
+    'a failed current stream still reconnects at its saved position',
+    () async {
+      await start();
+      final id = f.radio.current!.occurrenceId;
+      f.radio.buffering = true;
+      await f.radio.handleAudioError();
+      expect(f.player.opened, hasLength(2));
+      expect(f.radio.current!.occurrenceId, id);
+      expect(f.player.state.position, const Duration(seconds: 100));
+      expect(f.radio.outbox, isEmpty);
+    },
+  );
+
   test(
     'seeking back discards the prepared stream until near EOF again',
     () async {

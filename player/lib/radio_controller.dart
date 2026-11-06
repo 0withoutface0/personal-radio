@@ -286,19 +286,7 @@ class RadioController extends ChangeNotifier {
       }),
     );
     _subscriptions.add(
-      player!.stream.error.listen((message) {
-        final occurrence = current?.occurrenceId;
-        final epoch = _transportEpoch;
-        Future<void>.delayed(const Duration(seconds: 1), () {
-          if (!_disposed &&
-              current?.occurrenceId == occurrence &&
-              epoch == _transportEpoch &&
-              _resumeWanted) {
-            _needsReopen = true;
-            unawaited(checkPlaybackConnection());
-          }
-        });
-      }),
+      player!.stream.error.listen((_) => unawaited(handleAudioError())),
     );
   }
 
@@ -976,7 +964,13 @@ class RadioController extends ChangeNotifier {
         }());
         return;
       }
-    } catch (_) {
+    } catch (e) {
+      if (active() && e is ApiFailure && [401, 403, 409].contains(e.status)) {
+        hasLease = false;
+        await pause();
+        fail(e);
+        return;
+      }
       // Preparation failure must not interrupt the song already playing.
       // Ordinary opening/recovery remains the fallback at the boundary.
       if (active()) {
@@ -1010,7 +1004,9 @@ class RadioController extends ChangeNotifier {
         !identical(_nextPlayable, plan.entry) ||
         plan.entry.tidal?['id'] != plan.media.extras?['tidal_id'] ||
         !_resumeWanted ||
-        !hasLease) {
+        !hasLease ||
+        _leaseValidUntil == null ||
+        _leaseNow() >= _leaseValidUntil!) {
       await pause();
       _needsReopen = true;
       return;
@@ -1267,6 +1263,28 @@ class RadioController extends ChangeNotifier {
       _opening = false;
       update();
     }
+  }
+
+  @visibleForTesting
+  Future<void> handleAudioError() async {
+    final occurrence = current?.occurrenceId;
+    final epoch = _transportEpoch;
+    await Future<void>.delayed(const Duration(seconds: 1));
+    if (_disposed ||
+        current?.occurrenceId != occurrence ||
+        epoch != _transportEpoch ||
+        !_resumeWanted) {
+      return;
+    }
+    // mpv also logs errors from its future-entry prefetch. A healthy current
+    // stream must keep playing; missing progress still reaches the watchdog.
+    if (!buffering &&
+        player!.state.playing &&
+        _leaseNow() - _lastProgressAt < const Duration(seconds: 2)) {
+      return;
+    }
+    _needsReopen = true;
+    await checkPlaybackConnection();
   }
 
   /// An old audio socket can remain stalled after the VPN itself recovers.
