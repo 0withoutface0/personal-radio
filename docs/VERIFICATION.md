@@ -1,11 +1,14 @@
 # Verification status
 
-Version 0.3.0 is an early release. The Windows executable, signed Android APK and Linux Docker image are distributed separately from private account state. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
+Version 0.3.1 is an early release. The Windows executable, signed Android APK and Linux Docker image are distributed separately from private account state. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
 
-Automated checks: **149 Python tests**, **70 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
+Automated checks: **149 Python tests** (unchanged server), **85 Flutter unit/widget tests**, clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
 
 | Check | Evidence / status |
 | --- | --- |
+| Cellular outage recovery | Fake transport covers stalled headers/body, aborted requests without automatic mutation replay, serialized heartbeats, bounded lease grace, takeover, retries, saved occurrences/position and pause/skip cancellation |
+| Native network buffering | Windows native integration check passed with generated silence and a deliberately stalled loopback HTTP socket; confirmed memory cache settings and advancing playback during the stall; no accounts or activity reporting used |
+| Phone-wide VPN failures | A user reported intermittent cellular failures in other apps and audio remaining stalled after internet access recovered. Direct cellular connectivity was observed, with substantial latency variation. The underlying Android/Tailscale cause and the new app's physical cellular recovery remain unverified |
 | Personalized home shelves | Live read-only verification retrieved 19 Speed dial shortcuts (songs, artists, albums and playlists), 20 Quick picks and the provider's Play all action after account reconnection |
 | Home playback context | Speed dial song/playlist, Quick pick and Play all returned ordered initial and subsequent pages in an isolated SQLite store; no listening or rating writes |
 | Home UI and refresh | Phone/desktop layout, touch and button paging, artist/album navigation, exact playback targets, long-press queue action, search return, errors and stale refreshes covered; refresh leaves queue/outbox untouched |

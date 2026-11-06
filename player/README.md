@@ -58,7 +58,11 @@ Android uses audio_service's foreground media service and audio_session for noti
 
 For music-video recommendations, the server prefers YouTube's audio counterpart or resolves matching official-song metadata before comparing Tidal durations. Video intros and labels such as "Lyric Video" do not by themselves change the recording. **Retry skipped matches** rechecks the existing queue without changing occurrences, playback position or pending listening events. The correction button shows available Tidal candidates with album, duration and explicit status; choosing one deliberately saves that mapping. Different recording identifiers can still require this choice.
 
-Queue occurrences and events have stable UUIDs. The JSON outbox is flushed to disk before transmission, with a recoverable previous snapshot. Actual time uses monotonic time and media progress, excluding pause, buffering, mute and seek jumps. App restart restores the same occurrence and saved position, paused until Play. Stream errors renew the URL and resume, with bounded retries. A server restart invalidates its in-memory stream URLs; press Play to reconnect if automatic recovery fails. A device lease is renewed every six seconds while playing; Take over moves the lease, and the old device pauses on its next heartbeat.
+Queue occurrences and events have stable UUIDs. The JSON outbox is flushed to disk before transmission, with a recoverable previous snapshot. Actual time uses monotonic time and media progress, excluding pause, buffering, mute and seek jumps. App restart restores the same occurrence and saved position, paused until Play. A device lease is renewed every six seconds while playing; Take over moves the lease, and the old device pauses when the next heartbeat detects it.
+
+Version 0.3.1 adds bounded API deadlines covering response headers and bodies, and serializes lease heartbeats. Brief failed heartbeats leave buffered audio playing only within the last confirmed lease window; the player suspends before that window expires and reacquires ownership before reconnecting. Authorization failures or a device takeover pause immediately. A stream error or 12 seconds without media progress triggers up to three reconnect attempts with backoff, retaining the same occurrence and position. Pause, stop and track changes cancel stale reconnects. After repeated failures, press Play to try again. Thirty seconds of steady progress resets the retry budget. API deadlines never automatically repeat a provider mutation.
+
+Network playback keeps up to 90 seconds ahead, bounded by a 96 MiB forward-cache cap; high-resolution sources can hit the byte limit sooner. Temporary audio stays in memory, with a separate 8 MiB back-cache cap. No audio is saved as an offline download. The native player allows ten seconds for an inactive network read and buffers three seconds when resuming after starvation. This improves tolerance of interruptions but cannot supply audio during an extended outage. See [cellular and Tailscale troubleshooting](https://github.com/0withoutface0/youtube-tidal-radio/blob/main/docs/NETWORK.md) if other apps also stall. The Python server/API and stored state are unchanged from v0.3.0.
 
 Pending events are local until the server acknowledges them. The Listening screen distinguishes provider submissions and uncertain outcomes. Eligible history reports start after 30 seconds, or natural completion of a shorter track with essentially all its time heard. Provider mutations with ambiguous outcomes are never blindly retried. Recap inclusion remains unverified.
 
@@ -99,6 +103,12 @@ flutter test integration_test/windows_live_test.dart -d windows --dart-define=RA
 ```
 
 Offline tests use fixtures and never call your provider accounts. Release packaging requires Android SDK `aapt2` and checks the notification and media control icons in the compiled APK, because these are resolved by name and can otherwise be removed by resource shrinking. `scripts/Package-Apps.ps1` copies release outputs and writes SHA-256 checksums. No account file, pairing token, signing secret, or provider URL is included in the packages.
+
+An additional native network test uses generated silence and a loopback-only HTTP server that deliberately stops delivering data. It reads no provider credentials and reports no listening activity:
+
+```powershell
+flutter test integration_test/network_fixture_test.dart -d windows
+```
 
 Discover opens on **For you** with your signed-in YouTube Music **Speed dial** and **Quick picks**. Speed dial uses a swipeable three-by-three grid with previous/next buttons for mouse and keyboard users; artist and album shortcuts open their catalog pages, and playable shortcuts use YouTube's returned play action. Quick picks offers individual song radio and the provider's **Play all** action. Song long-press/right-click menus still offer Play next, Add to queue and artist/album links. Ratings remain in now playing. Search and its **For you** button let you switch between catalog results and home recommendations.
 
