@@ -36,6 +36,10 @@ if ($EngineDirectory) {
     if (!(Test-Path -LiteralPath (Join-Path $engineSource 'personal_radio_engine.exe')) -or !$CrtDirectory) {
         throw 'The bundled engine and an app-local Visual C++ x64 CRT directory are required.'
     }
+    $catalog = Join-Path $engineSource '_internal/ytmusicapi/locales/en/LC_MESSAGES/base.mo'
+    if (!(Test-Path -LiteralPath $catalog -PathType Leaf)) {
+        throw 'Rebuild the Windows engine to include the YouTube Music locale catalog.'
+    }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($apk)
     try {

@@ -13,6 +13,7 @@ try {
         '--noconfirm', '--noupx', '--onedir', '--name', 'personal_radio_engine',
         '--paths', $root, '--distpath', $output, '--workpath', (Join-Path $output 'work'),
         '--specpath', $output, '--add-data', "$root/radio_prototype/setup.html:radio_prototype",
+        '--collect-data', 'ytmusicapi',
         '--hidden-import', 'uvicorn.loops.asyncio', '--hidden-import', 'uvicorn.protocols.http.h11_impl',
         '--hidden-import', 'uvicorn.lifespan.off', 'scripts/embedded_entry.py'
     )
