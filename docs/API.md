@@ -96,3 +96,15 @@ The client may resolve `POST /api/streams` for the next matched queue entry befo
 The response includes `first_played_at`, `totals` (seconds, plays, unique recordings and artist credits), `buckets`, `top_songs`, `most_played`, `liked_songs` and `top_artists`. A play means one occurrence with positive listening time inside the range. An occurrence heard on both sides of midnight contributes time to both days and counts once in a combined range. Liked songs reflect the latest choice recorded in Personal Radio for recordings heard in the period.
 
 New `POST /api/events` requests may include `played_at`, the timezone-aware time the device measured the interval. Retries reuse the same event ID and timestamp. Older events keep their server receipt times. Dashboard reads use the saved database and device token, independent of provider account availability or history reporting.
+
+## Embedded engine
+
+The standalone player launches a private engine on a random IPv4 loopback port. It supplies a fresh bearer token at each start. Account status adds an `embedded` flag and local per-provider connection details.
+
+- `POST /api/local/accounts/youtube` validates pasted request headers or browser-auth JSON in a `text` field. `DELETE` disconnects the account. `POST /api/local/accounts/youtube/transfer` returns the validated session to the authenticated local player for approved desktop pairing.
+- `POST /api/local/accounts/browser` creates a five-minute, single-use Firefox setup URL. Only its temporary nonce authorizes a setup-page submission. The player can revoke the attempt with `DELETE /api/local/accounts/browser`.
+- `POST /api/local/accounts/tidal/start` returns a system-browser PKCE sign-in URL. `POST /api/local/accounts/tidal/finish` accepts the resulting redirect in a `text` field. `DELETE /api/local/accounts/tidal/attempt` revokes the pending attempt and `DELETE /api/local/accounts/tidal` disconnects Tidal.
+- `GET /api/local/history` accepts `after`, optional `through` and `local_only`. Each page returns a versioned `archive`, the next `after` cursor and the snapshot boundary `through`. Reuse that boundary for the remaining pages. `local_only=true` omits imported occurrences.
+- `POST /api/local/history` accepts an archive with occurrence metadata and stable event IDs. It merges a transaction, rejects conflicting IDs and returns the count inserted. Imports do not schedule provider writes.
+
+The shared stream API uses bounded FLAC or fragmented MP4 header inspection in standalone mode. Its verified source depth and sample rate come from those headers. The external FFmpeg decode verification endpoint is available only in server mode.

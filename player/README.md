@@ -1,5 +1,7 @@
 # Personal Radio apps
 
+For the embedded Windows and Android build, see [Standalone setup and builds](STANDALONE.md). The instructions below cover the shared player and the separate server connection.
+
 One Flutter application targets Windows x64 and Android 7.0+ (API 24). Discover offers separate **Songs**, **Artists** and **Albums** searches. The play button plays a song directly without creating radio. Artist pages show top songs, albums and singles/EPs; album pages show the ordered track list, **Play album**, and playback starting at a selected track. Song actions also offer **Autoplay** and **Start radio / mix**. Stations uses the personalized mixes discovered from your account.
 
 Queue removal targets a single occurrence, so other copies of the song stay in place. Use the row's **Remove from queue** button, its right-click/long-press menu, or swipe the row from right to left. Removing the current song skips to the next available song (or stops if the queue ends); it never sends a dislike or a completion. Removing other rows leaves playback and station context intact. Saved listening events remain in the outbox even after their queue row is removed.

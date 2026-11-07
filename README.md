@@ -1,6 +1,6 @@
 # Personal YouTube Music–Tidal Radio
 
-YouTube Music recommendations, played through matching lossless recordings from Tidal. A personal radio player for **Windows and Android**, with a **Python/FastAPI server** you can host on Linux with Docker and reach through Tailscale.
+YouTube Music recommendations, played through matching lossless recordings from Tidal. A personal radio player for **Windows and Android**, with an optional **Python/FastAPI server** you can host on Linux with Docker and reach through Tailscale.
 
 The player follows your system colors and light/dark appearance by default, including Android Material You/Monet. Choose **Settings > Appearance** for Original green, Ocean, Violet, Rose or Amber. It also prepares the next lossless queue track before the current one ends, and Android media controls include a Like action for both services.
 
@@ -27,7 +27,9 @@ Autoplay and Start radio use different request paths. Independently created sess
 
 ## Downloads and status
 
-[Download the Windows ZIP or Android APK](https://github.com/0withoutface0/personal-radio/releases). These are early builds; each player needs a separately configured server and your own accounts.
+[Download the published Windows ZIP or Android APK](https://github.com/0withoutface0/personal-radio/releases). Published builds currently use the separately configured server.
+
+The standalone implementation in this source tree runs the engine inside the app on Windows x64 and 64-bit Android. New installations use **On this device** by default. Upgrades retain their existing server profile. See the [standalone setup guide](player/STANDALONE.md) for setup, history sharing, build instructions and release verification status.
 
 Windows playback, full standard FLAC playback, full 24-bit source decoding, queue pagination and Docker restart persistence have been checked. Physical Android screen-off/headset/interruption behavior, continuous full Hi-Res playback on both devices, and prolonged network recovery still need acceptance testing. **YouTube Recap inclusion is unverified**, independently of successful history submission.
 
