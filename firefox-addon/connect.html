@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Personal Radio Connect</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 1rem system-ui; margin: 1rem; min-width: 15rem; max-width: 26rem; }
+  button { font: inherit; margin: .25rem 0; }
+  p { line-height: 1.4; }
+</style>
+<h1>Personal Radio Connect</h1>
+<p>Start YouTube sign-in in Personal Radio, then open this add-on from the setup page.</p>
+<p>If you continue, the add-on will open a YouTube Music tab and send its signed-in session headers to Personal Radio on this device. These headers grant account access. Only continue if you opened this setup page from the app.</p>
+<button id="connect">Connect this session</button>
+<button id="cancel">Cancel capture</button>
+<p id="status" role="status"></p>
+<script src="connect.js"></script>
+</html>

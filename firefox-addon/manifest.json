@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Personal Radio Connect",
+  "version": "0.1.0",
+  "description": "Connect your signed-in YouTube Music session to Personal Radio on this device.",
+  "permissions": ["activeTab", "webRequest"],
+  "host_permissions": ["https://music.youtube.com/*", "http://127.0.0.1/*"],
+  "background": { "scripts": ["background.js"] },
+  "action": { "default_popup": "connect.html", "default_title": "Personal Radio Connect" },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "personal-radio-connect@0withoutface0.github.io",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": { "required": ["authenticationInfo"] }
+    },
+    "gecko_android": { "strict_min_version": "142.0" }
+  }
+}
