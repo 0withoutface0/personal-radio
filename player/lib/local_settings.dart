@@ -105,8 +105,23 @@ class _LocalSettingsState extends State<_LocalSettings>
     if (mounted) setState(() => status = 'YouTube Music connected.');
   }
 
-  Future<void> _pasteYoutube() async =>
-      _youtube((await Clipboard.getData(Clipboard.kTextPlain))?.text);
+  Future<void> _pasteYoutube() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => const _YoutubeHeadersGuide(),
+    );
+    if (confirmed != true || !mounted) return;
+    await run(() async {
+      final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+      if (text == null || text.trim().isEmpty) {
+        throw ApiFailure(
+          0,
+          'Copy the request headers before tapping Paste and connect.',
+        );
+      }
+      await _youtube(text);
+    });
+  }
 
   Future<void> _openYoutubeFile() async {
     final file = await FilePicker.pickFile(
@@ -302,7 +317,7 @@ class _LocalSettingsState extends State<_LocalSettings>
                     child: const Text('Connect with Firefox'),
                   ),
                   TextButton(
-                    onPressed: available ? () => run(_pasteYoutube) : null,
+                    onPressed: available ? _pasteYoutube : null,
                     child: const Text('Paste request headers'),
                   ),
                   TextButton(
@@ -450,6 +465,72 @@ class _LocalSettingsState extends State<_LocalSettings>
       );
     },
   );
+}
+
+class _YoutubeHeadersGuide extends StatelessWidget {
+  const _YoutubeHeadersGuide();
+
+  @override
+  Widget build(BuildContext context) {
+    final heading = Theme.of(context).textTheme.titleSmall;
+    return AlertDialog(
+      title: const Text('Copy YouTube Music request headers'),
+      scrollable: true,
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 8,
+          children: [
+            if (Theme.of(context).platform == TargetPlatform.android)
+              const Text(
+                'Use a computer to capture the headers. For phone setup, you can '
+                'connect on Windows first, then use Connect from Windows on Android.',
+              ),
+            Text('1. Open YouTube Music on a computer', style: heading),
+            const Text(
+              'Go to music.youtube.com in Firefox, Chrome, or Edge and sign in. '
+              'Press Ctrl+Shift+I, select Network, then reload the page.',
+            ),
+            Text('2. Find a browse request', style: heading),
+            const Text(
+              'Type browse in the Network filter. Open Library in YouTube Music '
+              'if the list is empty. Pick a browse request to music.youtube.com '
+              'with method POST and status 200.',
+            ),
+            Text('3. Copy the request headers', style: heading),
+            const Text(
+              'Firefox: Right-click the request and choose Copy > Copy Request Headers.',
+            ),
+            const Text(
+              'Chrome or Edge: Select the request, open Headers, and copy the '
+              'entire Request Headers section. Use View source if shown.',
+            ),
+            const Text(
+              'Check that the section includes both Cookie and Authorization. '
+              'If either is missing in Chrome or Edge, try Firefox.',
+            ),
+            Text('4. Paste in Personal Radio', style: heading),
+            const Text(
+              'With the headers on this device’s clipboard, choose Paste and connect '
+              'below. Treat the headers like a password and keep them out of chats and screenshots.',
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Paste and connect'),
+        ),
+      ],
+    );
+  }
 }
 
 class _HistoryPassphrase extends StatefulWidget {
