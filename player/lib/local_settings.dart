@@ -283,6 +283,13 @@ class _LocalSettingsState extends State<_LocalSettings>
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
+                leading: const Icon(Icons.qr_code_2),
+                title: Text(
+                  Platform.isWindows ? 'Set up Android' : 'Set up from Windows',
+                ),
+                onTap: busy ? null : () => showDeviceSetup(context, host),
+              ),
+              ListTile(
                 title: const Text('Appearance'),
                 subtitle: Text(radio.appearance.palette.label),
                 leading: const Icon(Icons.palette_outlined),

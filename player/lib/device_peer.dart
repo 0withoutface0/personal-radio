@@ -13,10 +13,28 @@ import 'history_files.dart';
 
 enum PairPurpose {
   youtube('YouTube Music sign-in', 'Connect from Windows'),
-  history('listening history', 'Pair Wi-Fi history');
+  history('listening history', 'Pair Wi-Fi history'),
+  setup('full Android setup', 'Set up from Windows');
 
   const PairPurpose(this.label, this.androidAction);
   final String label, androidAction;
+}
+
+typedef ServerConnection = ({String origin, String token});
+typedef _HistoryOffer = ({HttpServer server, PairCode peer});
+
+ServerConnection shareableServer(String address, String token) {
+  final origin = validateServer(address);
+  final host = Uri.parse(origin).host;
+  if (host == 'localhost' ||
+      host == '10.0.2.2' ||
+      InternetAddress.tryParse(host)?.isLoopback == true ||
+      token.trim().isEmpty) {
+    throw const FormatException(
+      'Connect Windows using a server address your phone can reach, such as its Tailscale address.',
+    );
+  }
+  return (origin: origin, token: token);
 }
 
 bool privateAddress(String value) {
@@ -196,6 +214,7 @@ class PairOffer {
   final incoming = ValueNotifier<String?>(null);
   final decision = Completer<bool>();
   final finished = Completer<bool>();
+  _HistoryOffer? _history;
   void decide(bool approved) {
     if (!decision.isCompleted) decision.complete(approved);
   }
@@ -250,7 +269,12 @@ class DevicePeer extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<PairOffer> offer(InternetAddress address, PairPurpose purpose) async {
+  Future<PairOffer> offer(
+    InternetAddress address,
+    PairPurpose purpose, {
+    bool shareHistory = false,
+    ServerConnection? serverConnection,
+  }) async {
     if (!privateAddress(address.address)) {
       throw const FormatException('Choose your private Wi-Fi address.');
     }
@@ -275,23 +299,47 @@ class DevicePeer extends ChangeNotifier {
       PairCode(purpose, address.address, server.port, pin, _randomToken()),
     );
     _offer = offer;
+    var delivered = false;
+    var acknowledged = false;
     server.listen((request) async {
       final response = request.response;
       response.headers.contentType = ContentType.json;
       response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
-      var claimed = false;
+      bool? finished;
       try {
         final remote = request.connectionInfo?.remoteAddress.address ?? '';
         if (request.method != 'POST' ||
-            request.uri.path != '/pair' ||
             !privateAddress(remote) ||
             !_authorized(request, offer.code.secret) ||
             DateTime.now().isAfter(offer.expires) ||
-            offer.incoming.value != null) {
+            _offer != offer) {
           response.statusCode = HttpStatus.forbidden;
           return;
         }
-        claimed = true;
+        if (request.uri.path == '/confirm' && purpose == PairPurpose.setup) {
+          if (!delivered || acknowledged || offer.incoming.value != remote) {
+            response.statusCode = HttpStatus.forbidden;
+            return;
+          }
+          acknowledged = true;
+          finished = false;
+          final installed = (await _readJson(request))['installed'] == true;
+          if (installed && offer._history != null) {
+            await _activateHistory(offer, certificate);
+          }
+          if (_offer != offer) {
+            response.statusCode = HttpStatus.forbidden;
+            return;
+          }
+          finished = installed;
+          response.write('{}');
+          return;
+        }
+        if (request.uri.path != '/pair' || offer.incoming.value != null) {
+          response.statusCode = HttpStatus.forbidden;
+          return;
+        }
+        finished = false;
         offer.incoming.value = remote;
         final approved = await offer.decision.future.timeout(
           offer.expires.difference(DateTime.now()),
@@ -301,56 +349,109 @@ class DevicePeer extends ChangeNotifier {
           response.statusCode = HttpStatus.forbidden;
           return;
         }
-        if (purpose == PairPurpose.youtube) {
-          final credentials = await _local.call(
-            '/api/local/accounts/youtube/transfer',
-            body: {},
-          );
-          if (_offer != offer) return;
-          response.write(jsonEncode(credentials));
-        } else {
-          final historyServer = await HttpServer.bindSecure(
-            address,
-            0,
-            certificate.context(),
-          );
-          final peer = PairCode(
-            purpose,
-            address.address,
-            historyServer.port,
-            pin,
-            _randomToken(),
-          );
-          try {
-            if (_offer != offer) {
-              throw const FormatException('Pairing was cancelled.');
+        final dynamic payload;
+        switch (purpose) {
+          case PairPurpose.youtube:
+            payload = await _local.call(
+              '/api/local/accounts/youtube/transfer',
+              body: {},
+            );
+          case PairPurpose.history:
+            await _prepareHistory(offer, address, certificate);
+            await _activateHistory(offer, certificate);
+            payload = _peer!.toJson();
+          case PairPurpose.setup:
+            final details = await _readJson(request);
+            if (serverConnection != null) {
+              payload = {
+                'mode': 'server',
+                'origin': serverConnection.origin,
+                'token': serverConnection.token,
+              };
+            } else {
+              final accounts = await _local.call(
+                '/api/local/accounts/setup/transfer',
+                body: {},
+              );
+              if (shareHistory &&
+                  details['history_available'] == true &&
+                  !paired) {
+                await _prepareHistory(offer, address, certificate);
+              }
+              payload = {
+                'mode': 'local',
+                'accounts': accounts,
+                if (offer._history != null)
+                  'history': offer._history!.peer.toJson(),
+              };
             }
-            await _save(peer, 0, 0, certificate);
-            if (_offer != offer) {
-              throw const FormatException('Pairing was cancelled.');
-            }
-            _peer = peer;
-            _historyServer = historyServer;
-            _listenHistory(historyServer, peer);
-            notifyListeners();
-            response.write(jsonEncode(peer.toJson()));
-          } catch (_) {
-            await historyServer.close(force: true);
-            rethrow;
-          }
         }
-        await response.close();
-        offer.finished.complete(true);
+        if (_offer != offer) {
+          response.statusCode = HttpStatus.forbidden;
+          return;
+        }
+        response.write(jsonEncode(payload));
+        delivered = true;
+        // Full setup waits for the receiving app to confirm it installed the settings.
+        finished = purpose == PairPurpose.setup ? null : true;
       } catch (_) {
         response.statusCode = HttpStatus.serviceUnavailable;
       } finally {
-        await response.close();
-        if (claimed && !offer.finished.isCompleted) {
-          offer.finished.complete(false);
+        try {
+          await response.close();
+        } catch (_) {
+          finished = false;
+        }
+        if (finished != null && !offer.finished.isCompleted) {
+          offer.finished.complete(finished);
         }
       }
     });
     return offer;
+  }
+
+  Future<void> _prepareHistory(
+    PairOffer offer,
+    InternetAddress address,
+    _Certificate certificate,
+  ) async {
+    final server = await HttpServer.bindSecure(
+      address,
+      0,
+      certificate.context(),
+    );
+    if (_offer != offer || paired) {
+      await server.close(force: true);
+      throw const FormatException('History pairing is no longer available.');
+    }
+    final peer = PairCode(
+      PairPurpose.history,
+      address.address,
+      server.port,
+      offer.code.pin,
+      _randomToken(),
+    );
+    offer._history = (server: server, peer: peer);
+  }
+
+  Future<void> _activateHistory(
+    PairOffer offer,
+    _Certificate certificate,
+  ) async {
+    if (_offer != offer || paired) {
+      throw const FormatException('History pairing is no longer available.');
+    }
+    final history = offer._history!;
+    await _save(history.peer, 0, 0, certificate);
+    if (_offer != offer) {
+      await _storage.delete(key: _storageKey);
+      throw const FormatException('Pairing was cancelled.');
+    }
+    offer._history = null;
+    _peer = history.peer;
+    _historyServer = history.server;
+    _listenHistory(history.server, history.peer);
+    notifyListeners();
   }
 
   bool _authorized(HttpRequest request, String token) {
@@ -440,16 +541,70 @@ class DevicePeer extends ChangeNotifier {
         body: {'text': jsonEncode(result['auth'])},
       );
     } else {
-      final peer = PairCode.fromJson(result);
-      if (peer.purpose != purpose ||
-          peer.host != code.host ||
-          peer.pin != code.pin) {
-        throw const FormatException('Desktop pairing details changed.');
+      await _receiveHistory(_historyFrom(result, code), generation);
+    }
+  }
+
+  PairCode _historyFrom(dynamic data, PairCode source) {
+    final peer = PairCode.fromJson(data);
+    if (peer.purpose != PairPurpose.history ||
+        peer.host != source.host ||
+        peer.pin != source.pin) {
+      throw const FormatException('Desktop pairing details changed.');
+    }
+    return peer;
+  }
+
+  Future<void> _receiveHistory(PairCode peer, int generation) async {
+    await _save(peer, 0, 0);
+    if (generation != _generation) return;
+    _peer = peer;
+    _sent = _received = 0;
+    notifyListeners();
+  }
+
+  Future<void> acceptSetup(
+    String encoded,
+    Future<void> Function(Map<String, dynamic>) install,
+  ) async {
+    final code = PairCode.decode(encoded, PairPurpose.setup);
+    final canShareHistory =
+        !paired && await _storage.read(key: _storageKey) == null;
+    final payload = await code.request(
+      '/pair',
+      body: {'history_available': canShareHistory},
+      timeout: const Duration(minutes: 5),
+    ) as Map<String, dynamic>;
+    PairCode? history;
+    try {
+      if (canShareHistory &&
+          payload['mode'] == 'local' &&
+          payload['history'] != null) {
+        history = _historyFrom(payload['history'], code);
       }
-      await _save(peer, 0, 0);
-      if (generation != _generation) return;
-      _peer = peer;
-      notifyListeners();
+      await install(payload);
+    } catch (_) {
+      // The desktop can release its proposed history listener immediately.
+      try {
+        await code.request(
+          '/confirm',
+          body: {'installed': false},
+          timeout: const Duration(seconds: 3),
+        );
+      } catch (_) {
+        // The offer will expire if the desktop is no longer reachable.
+      }
+      rethrow;
+    }
+    try {
+      await code.request('/confirm', body: {'installed': true});
+      if (history != null) await _receiveHistory(history, _generation);
+    } catch (_) {
+      throw FormatException(
+        history == null
+            ? 'Setup saved on this phone. Windows could not confirm it.'
+            : 'Accounts connected. Wi-Fi history pairing did not complete.',
+      );
     }
   }
 
@@ -518,9 +673,11 @@ class DevicePeer extends ChangeNotifier {
   Future<void> closeOffer() async {
     final server = _pairServer;
     _pairServer = null;
-    _offer?.decide(false);
+    final offer = _offer;
     _offer = null;
+    offer?.decide(false);
     await server?.close(force: true);
+    await offer?._history?.server.close(force: true);
   }
 
   Future<void> close() async {

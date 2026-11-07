@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,7 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'appearance.dart';
 import 'appearance_dialog.dart';
 import 'catalog_view.dart';
+import 'desktop_pairing.dart';
 import 'listening_view.dart';
 import 'models.dart';
 import 'player_host.dart';
@@ -278,6 +280,16 @@ class _RadioHomeState extends State<RadioHome> {
       ),
     ),
   );
+  Widget? get setupFromWindows {
+    final host = widget.host;
+    if (!Platform.isAndroid || host == null) return null;
+    return FilledButton.icon(
+      onPressed: () => showDeviceSetup(context, host),
+      icon: const Icon(Icons.qr_code_scanner),
+      label: const Text('Set up from Windows'),
+    );
+  }
+
   Widget connectScreen() => Center(
     child: SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -302,6 +314,10 @@ class _RadioHomeState extends State<RadioHome> {
               style: TextStyle(color: muted, fontSize: 16, height: 1.6),
             ),
             const SizedBox(height: 28),
+            if (setupFromWindows case final setup?) ...[
+              setup,
+              const SizedBox(height: 12),
+            ],
             FilledButton.icon(
               onPressed: settings,
               icon: const Icon(Icons.link),
@@ -407,10 +423,17 @@ class _RadioHomeState extends State<RadioHome> {
     if (r.localMode &&
         (!r.accountLinked('youtube') || !r.accountLinked('tidal'))) {
       return Center(
-        child: FilledButton.icon(
-          onPressed: settings,
-          icon: const Icon(Icons.account_circle_outlined),
-          label: const Text('Set up your music accounts'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 8,
+          children: [
+            ?setupFromWindows,
+            FilledButton.icon(
+              onPressed: settings,
+              icon: const Icon(Icons.account_circle_outlined),
+              label: const Text('Set up your music accounts'),
+            ),
+          ],
         ),
       );
     }
@@ -996,6 +1019,17 @@ class _RadioHomeState extends State<RadioHome> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (host != null)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.qr_code_2),
+                    title: Text(
+                      Platform.isWindows
+                          ? 'Set up Android'
+                          : 'Set up from Windows',
+                    ),
+                    onTap: saving ? null : () => showDeviceSetup(c, host),
+                  ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.palette_outlined),

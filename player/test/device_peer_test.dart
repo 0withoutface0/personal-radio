@@ -35,6 +35,134 @@ void main() {
     }
   });
 
+  test(
+    'server setup shares only the saved connection after approval',
+    () async {
+      final addresses = await lanAddresses();
+      if (addresses.isEmpty) {
+        markTestSkipped('No private IPv4 interface for the TLS fixture.');
+        return;
+      }
+      expect(
+        () => shareableServer('http://127.0.0.1:8765', 'fixture'),
+        throwsFormatException,
+      );
+      final desktop = DevicePeer(() => null);
+      final phone = DevicePeer(() => null);
+      addTearDown(desktop.close);
+      addTearDown(phone.close);
+      final connection = shareableServer(
+        'https://radio.example.invalid',
+        'fixture',
+      );
+      final offer = await desktop.offer(
+        addresses.first,
+        PairPurpose.setup,
+        serverConnection: connection,
+      );
+      final qr = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(offer.code.encode()))),
+      );
+      expect(
+        qr.keys,
+        unorderedEquals([
+          'version',
+          'purpose',
+          'host',
+          'port',
+          'pin',
+          'secret',
+        ]),
+      );
+      await expectLater(
+        offer.code.request('/confirm', body: {'installed': true}),
+        throwsFormatException,
+      );
+      final requested = Completer<void>();
+      offer.incoming.addListener(requested.complete);
+      final received = Completer<Map<String, dynamic>>();
+      final installed = Completer<void>();
+      final setup = phone.acceptSetup(offer.code.encode(), (payload) async {
+        received.complete(payload);
+        await installed.future;
+      });
+      await requested.future.timeout(const Duration(seconds: 8));
+      expect(received.isCompleted, isFalse);
+      offer.decide(true);
+      expect(await received.future, {
+        'mode': 'server',
+        'origin': connection.origin,
+        'token': connection.token,
+      });
+      expect(offer.finished.isCompleted, isFalse);
+      installed.complete();
+      await setup;
+      expect(await offer.finished.future, isTrue);
+      expect(desktop.paired || phone.paired, isFalse);
+    },
+  );
+
+  test('one scan transfers both accounts and pairs history only after installation', () async {
+    final addresses = await lanAddresses();
+    if (addresses.isEmpty) {
+      markTestSkipped('No private IPv4 interface for the TLS fixture.');
+      return;
+    }
+    final accounts = {
+      'youtube': {'cookie': 'synthetic'},
+      'tidal': {'access_token': 'synthetic'},
+    };
+    final api = RadioApi(
+      'http://127.0.0.1:1234',
+      'test',
+      'windows',
+      client: MockClient((request) async {
+        expect(request.url.path, '/api/local/accounts/setup/transfer');
+        return _reply(accounts);
+      }),
+    );
+    final desktop = DevicePeer(() => api);
+    final phone = DevicePeer(() => null);
+    addTearDown(api.close);
+    addTearDown(desktop.close);
+    addTearDown(phone.close);
+    final first = await desktop.offer(
+      addresses.first,
+      PairPurpose.setup,
+      shareHistory: true,
+    );
+    first.incoming.addListener(() => first.decide(true));
+    await expectLater(
+      phone.acceptSetup(
+        first.code.encode(),
+        (_) async => throw const FormatException('Bad fixture'),
+      ),
+      throwsFormatException,
+    );
+    expect(await first.finished.future, isFalse);
+    expect(desktop.paired || phone.paired, isFalse);
+    await desktop.closeOffer();
+
+    final offer = await desktop.offer(
+      addresses.first,
+      PairPurpose.setup,
+      shareHistory: true,
+    );
+    offer.incoming.addListener(() => offer.decide(true));
+    await phone.acceptSetup(offer.code.encode(), (payload) async {
+      expect(payload['mode'], 'local');
+      expect(payload['accounts'], accounts);
+      expect(payload['history']['purpose'], 'history');
+      expect(desktop.paired || phone.paired, isFalse);
+    });
+    expect(await offer.finished.future, isTrue);
+    expect(desktop.serving && phone.paired, isTrue);
+    await expectLater(
+      offer.code.request('/confirm', body: {'installed': true}),
+      throwsFormatException,
+    );
+  });
+
   test('desktop requires approval and its pinned session code can only be used once', () async {
     final addresses = await lanAddresses();
     if (addresses.isEmpty) {

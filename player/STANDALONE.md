@@ -9,6 +9,12 @@ On Windows, run the per-user installer or extract the entire ZIP and launch **pe
 
 Open the gear menu to switch modes. Each mode keeps its own queue, pending activity and account setup. Listening recorded by the server stays there. A standalone account or saved queue is available again when you switch back to **On this device**.
 
+## Set up Android in one scan
+
+Once Personal Radio is working on Windows, open **Settings → Set up Android → Show setup QR**. On your phone, open **Set up from Windows**, scan the QR, then approve the phone on Windows. Keep both devices on the same private network during setup. The code expires in five minutes.
+
+With **On this device** on Windows, this connects both music accounts on the phone. Select **Include Wi-Fi listening history sync** before showing the QR to pair history at the same time. The phone can then play directly from the providers. With a server-connected Windows app, the same setup connects Android to that server, so the saved server address must be reachable from the phone.
+
 ## Connect accounts
 
 Open **Settings → On this device**.
@@ -16,7 +22,7 @@ Open **Settings → On this device**.
 - **YouTube Music on Windows**. Choose **Paste request headers** for the built-in Firefox, Chrome, and Edge walkthrough. Once the headers are on your clipboard, choose **Paste and connect**. You can also choose **Import browser-auth JSON** if you already have a browser-auth file. For the manual capture steps see [ytmusicapi browser authentication](https://ytmusicapi.readthedocs.io/en/stable/setup/browser.html).
 - **YouTube Music on Android**. In a signed-in standalone Windows app, choose **Pair Android for YouTube**. In Android Settings choose **Connect from Windows**, then scan the QR or paste the temporary code. Both devices must be on the same private network and Windows must approve the request. If Windows prompts about the firewall, allow access on your trusted private network. Codes expire after five minutes. Android can also accept pasted headers or a browser-auth JSON file.
 - **Firefox**. The browser helper source is in [firefox-addon](../firefox-addon/README.md). In a compatible development build, open **Connect with Firefox** from Settings, open the add-on on the setup page, and explicitly approve capture. Choose **Check accounts** when it finishes. Distributed builds require Mozilla signing and review before enabling this option.
-- **Tidal**. Choose **Open Tidal sign-in** and sign in with your own subscription in the system browser. Copy the final HTTPS redirect URL to finish setup. Android can also share the final URL to Personal Radio, then choose **Finish Tidal sign-in**. Use the browser’s address bar or share action on the final page. Each device completes its own Tidal sign-in.
+- **Tidal**. Choose **Open Tidal sign-in** and sign in with your own subscription in the system browser. Copy the final HTTPS redirect URL to finish setup. Android can also share the final URL to Personal Radio, then choose **Finish Tidal sign-in**. Use the browser’s address bar or share action on the final page. Use this manual sign-in when setting up Tidal without a Windows setup QR.
 
 The app validates the imported YouTube session. Listening and ratings stay pending if it cannot verify the channel or if a different account is connected. Sign back into the originating account to release those records. Recap remains independently unverified.
 

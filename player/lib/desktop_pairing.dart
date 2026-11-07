@@ -1,17 +1,22 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import 'api.dart';
 import 'device_peer.dart';
+import 'player_host.dart';
 
 Future<bool> showDesktopPairing(
   BuildContext context,
   DevicePeer peer,
-  PairPurpose purpose,
-) async {
+  PairPurpose purpose, {
+  bool shareHistory = false,
+  ServerConnection? serverConnection,
+}) async {
   final addresses = await lanAddresses();
   if (addresses.isEmpty) {
     throw const FormatException('Connect this PC to your private Wi-Fi first.');
@@ -33,7 +38,12 @@ Future<bool> showDesktopPairing(
           ),
         );
   if (address == null || !context.mounted) return false;
-  final offer = await peer.offer(address, purpose);
+  final offer = await peer.offer(
+    address,
+    purpose,
+    shareHistory: shareHistory,
+    serverConnection: serverConnection,
+  );
   try {
     if (!context.mounted) return false;
     return await showDialog<bool>(
@@ -44,6 +54,171 @@ Future<bool> showDesktopPairing(
   } finally {
     await peer.closeOffer();
   }
+}
+
+Future<void> showDeviceSetup(BuildContext context, PlayerHost host) async {
+  if (host.changing) return;
+  if (Platform.isAndroid) {
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const _PairScanner(PairPurpose.setup)),
+    );
+    if (code == null || !context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _SetupProgress(host, code),
+    );
+    return;
+  }
+
+  final radio = host.radio;
+  try {
+    final local = radio.localMode;
+    if (!radio.ready ||
+        (local &&
+            (!radio.accountLinked('youtube') ||
+                !radio.accountLinked('tidal')))) {
+      throw const FormatException(
+        'Connect Windows to your music accounts or server first.',
+      );
+    }
+    final server = local ? null : shareableServer(radio.origin, radio.token);
+    var shareHistory = false;
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => StatefulBuilder(
+        builder: (context, setDialog) => AlertDialog(
+          title: const Text('Set up Android'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                local
+                    ? 'Give a phone you trust access to your signed-in YouTube Music and Tidal accounts.'
+                    : 'Connect a phone you trust to this app’s saved server.',
+              ),
+              if (local && !host.peer.paired)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Include Wi-Fi listening history sync'),
+                  value: shareHistory,
+                  onChanged: (value) =>
+                      setDialog(() => shareHistory = value == true),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('Show setup QR'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (approved != true || !context.mounted || host.radio != radio) return;
+    await showDesktopPairing(
+      context,
+      host.peer,
+      PairPurpose.setup,
+      shareHistory: shareHistory,
+      serverConnection: server,
+    );
+  } catch (error) {
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Set up Android'),
+        content: Text(
+          error is FormatException
+              ? error.message
+              : 'Could not open setup. Check your private Wi-Fi and try again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SetupProgress extends StatefulWidget {
+  const _SetupProgress(this.host, this.code);
+  final PlayerHost host;
+  final String code;
+
+  @override
+  State<_SetupProgress> createState() => _SetupProgressState();
+}
+
+class _SetupProgressState extends State<_SetupProgress> {
+  var installing = false;
+  var finished = false;
+  var message = 'Approve this phone in Personal Radio on Windows.';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_connect());
+  }
+
+  Future<void> _connect() async {
+    final host = widget.host;
+    try {
+      await host.peer.acceptSetup(widget.code, (setup) async {
+        if (!mounted) throw const FormatException('Setup was cancelled.');
+        setState(() {
+          installing = true;
+          message = 'Checking the settings and connecting this phone…';
+        });
+        await host.installDesktopSetup(setup);
+      });
+      message = 'Setup complete. Your phone is ready to play.';
+    } catch (error) {
+      message = switch (error) {
+        ApiFailure(:final message) => message,
+        FormatException(:final message) => message,
+        _ => 'Could not complete setup. Keep both devices on the same private network and try a new code.',
+      };
+      if (!mounted && installing) host.radio.fail(FormatException(message));
+    }
+    if (mounted) setState(() => finished = true);
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: !installing || finished,
+    child: AlertDialog(
+      title: const Text('Set up from Windows'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(message),
+          if (!finished) ...[
+            const SizedBox(height: 12),
+            const LinearProgressIndicator(),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: installing && !finished
+              ? null
+              : () => Navigator.pop(context),
+          child: Text(finished ? 'Done' : 'Cancel'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _DesktopCode extends StatefulWidget {
@@ -85,11 +260,11 @@ class _DesktopCodeState extends State<_DesktopCode> {
   @override
   Widget build(BuildContext context) => AlertDialog(
     scrollable: true,
-    title: Text(
-      offer.code.purpose == PairPurpose.youtube
-          ? 'Connect YouTube on Android'
-          : 'Pair Android listening history',
-    ),
+    title: Text(switch (offer.code.purpose) {
+      PairPurpose.youtube => 'Connect YouTube on Android',
+      PairPurpose.history => 'Pair Android listening history',
+      PairPurpose.setup => 'Set up Android',
+    }),
     content: SizedBox(
       width: 380,
       child: ValueListenableBuilder<String?>(
@@ -103,9 +278,11 @@ class _DesktopCodeState extends State<_DesktopCode> {
               Text(
                 'Approve the phone at $incoming only if you just scanned this code.',
               ),
-              if (decided)
-                const LinearProgressIndicator()
-              else
+              if (decided) ...[
+                if (offer.code.purpose == PairPurpose.setup)
+                  const Text('Waiting for Android to finish setup…'),
+                const LinearProgressIndicator(),
+              ] else
                 FilledButton(
                   onPressed: () {
                     setState(() => decided = true);
@@ -281,11 +458,11 @@ class _PairScannerState extends State<_PairScanner>
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(
-        widget.purpose == PairPurpose.history
-            ? 'Scan history QR'
-            : 'Scan YouTube sign-in QR',
-      ),
+      title: Text(switch (widget.purpose) {
+        PairPurpose.youtube => 'Scan YouTube sign-in QR',
+        PairPurpose.history => 'Scan history QR',
+        PairPurpose.setup => 'Scan setup QR',
+      }),
     ),
     body: Column(
       children: [

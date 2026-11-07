@@ -93,30 +93,109 @@ class PlayerHost extends ChangeNotifier {
     return controller;
   }
 
-  Future<void> switchMode(bool local) async {
+  Future<void> installDesktopSetup(Map<String, dynamic> setup) async {
+    if (changing) {
+      throw const FormatException('Wait for the current mode change.');
+    }
+    final bool local;
+    final Future<void> Function(RadioController) install;
+    switch (setup['mode']) {
+      case 'local':
+        if (!supportsLocal) {
+          throw const FormatException(
+            'Install the standalone Android build to use this setup code.',
+          );
+        }
+        final accounts = setup['accounts'];
+        if (accounts is! Map<String, dynamic>) {
+          throw const FormatException('Make a new setup code on Windows.');
+        }
+        local = true;
+        install = (controller) async {
+          final api = controller.api;
+          if (api == null || !controller.ready) {
+            throw const FormatException(
+              'Retry the local engine in Settings and scan a new code.',
+            );
+          }
+          await controller.pause();
+          await api.call(
+            '/api/local/accounts/setup',
+            body: accounts,
+            timeout: const Duration(seconds: 110),
+          );
+          await controller.refreshLocalAccounts();
+        };
+      case 'server':
+        final address = setup['origin'];
+        final token = setup['token'];
+        if (address is! String || token is! String) {
+          throw const FormatException('Make a new setup code on Windows.');
+        }
+        final server = shareableServer(address, token);
+        local = false;
+        install = (controller) async {
+          if (controller.outbox.isNotEmpty &&
+              (controller.origin != server.origin ||
+                  controller.token != server.token)) {
+            throw const FormatException(
+              'Sync pending listening events with your previous server before changing servers.',
+            );
+          }
+          await controller.connect(server.origin, server.token);
+        };
+      default:
+        throw const FormatException('Make a new setup code on Windows.');
+    }
+
+    if (local == radio.localMode) {
+      if (local && !radio.ready) await recover();
+      await install(radio);
+    } else {
+      await _switchMode(local, configure: install);
+    }
+  }
+
+  Future<void> switchMode(bool local) => _switchMode(local);
+
+  Future<void> _switchMode(
+    bool local, {
+    Future<void> Function(RadioController)? configure,
+  }) async {
     if (changing || local == radio.localMode || (local && !supportsLocal)) {
       return;
     }
     changing = true;
     notifyListeners();
     final old = radio;
+    RadioController? candidate;
     try {
       await _recovery;
       if (old.localMode) await peer.close();
       await old.shutdown();
       if (old.localMode) await engine.stop();
-      radio = await _open(local);
+      candidate = await _open(local);
+      await configure?.call(candidate);
+      await preferences.save({'mode': local ? 'local' : 'server'});
+      radio = candidate;
       audio?.bind(radio);
       old.dispose();
-      await preferences.save({'mode': local ? 'local' : 'server'});
     } catch (failure) {
-      // If the transition failed before attaching a player, restore the previous
-      // profile using its own saved queue and pending events.
+      if (candidate != null && identical(old, radio)) {
+        try {
+          await candidate.shutdown();
+        } catch (_) {
+          // Restore the current profile even if the discarded player cannot shut down cleanly.
+        }
+        candidate.dispose();
+        if (local) await engine.stop();
+      }
       if (identical(old, radio)) {
         radio = await _open(old.localMode);
         audio?.bind(radio);
         old.dispose();
       }
+      if (configure != null) rethrow;
       radio.fail(failure);
     } finally {
       changing = false;
