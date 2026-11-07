@@ -7,6 +7,7 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'appearance.dart';
 import 'appearance_dialog.dart';
 import 'catalog_view.dart';
+import 'listening_view.dart';
 import 'models.dart';
 import 'radio_controller.dart';
 import 'song_actions.dart';
@@ -396,7 +397,7 @@ class _RadioHomeState extends State<RadioHome> {
     0 => discover(),
     1 => stationList(),
     2 => queueList(),
-    _ => listening(),
+    _ => ListeningView(radio: r),
   };
   Widget discover() =>
       CatalogView(key: catalogKey, radio: r, search: search, focus: focus);
@@ -578,122 +579,6 @@ class _RadioHomeState extends State<RadioHome> {
       ),
     ],
   );
-  Widget listening() {
-    final report = r.report, totals = r.report?['totals'] as Map?;
-    final seconds = (totals?['listened_seconds'] as num? ?? 0).toDouble();
-    final submissions = report?['submissions'] as List? ?? [];
-    return RefreshIndicator(
-      onRefresh: r.refreshReport,
-      child: ListView(
-        children: [
-          heading(
-            'Your listening',
-            'Every minute counts',
-            'Local statistics stay available regardless of YouTube reporting.',
-          ),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        (seconds / 60).toStringAsFixed(1),
-                        style: TextStyle(
-                          fontSize: 42,
-                          fontWeight: FontWeight.w300,
-                          color: lime,
-                        ),
-                      ),
-                      Text('minutes listened', style: TextStyle(color: muted)),
-                    ],
-                  ),
-                  Column(
-                    children: [
-                      Text(
-                        '${totals?['occurrences'] ?? 0}',
-                        style: const TextStyle(fontSize: 30),
-                      ),
-                      Text('plays started', style: TextStyle(color: muted)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          ListTile(
-            leading: Icon(Icons.info_outline, color: lime),
-            title: const Text('YouTube Recap remains unverified'),
-            subtitle: const Text(
-              'History submission and Recap eligibility are separate results.',
-            ),
-          ),
-          ListTile(
-            title: Text('${r.outbox.length} events waiting on this device'),
-            trailing: TextButton(
-              onPressed: r.sync,
-              child: const Text('Sync now'),
-            ),
-          ),
-          Divider(color: outline),
-          const ListTile(title: Text('Top artists')),
-          for (final row in report?['top_artists'] as List? ?? [])
-            ListTile(
-              title: Text(row['artist']),
-              trailing: Text(
-                '${((row['listened_seconds'] as num) / 60).toStringAsFixed(1)} min',
-              ),
-            ),
-          const ListTile(title: Text('Top songs')),
-          for (final row in report?['top_songs'] as List? ?? [])
-            ListTile(
-              title: Text(row['title']),
-              subtitle: Text(row['artist']),
-              trailing: Text(
-                '${((row['listened_seconds'] as num) / 60).toStringAsFixed(1)} min',
-              ),
-            ),
-          Divider(color: outline),
-          const ListTile(title: Text('Activity reporting')),
-          if (submissions.isEmpty)
-            const ListTile(
-              subtitle: Text(
-                'Plays become eligible after 30 seconds of actual listening, or completion of a shorter track.',
-              ),
-            ),
-          for (final row in submissions.reversed.take(30))
-            ListTile(
-              leading: Icon(
-                row['state'] == 'visible'
-                    ? Icons.check_circle_outline
-                    : row['state'] == 'uncertain'
-                    ? Icons.help_outline
-                    : Icons.schedule,
-                color: row['state'] == 'uncertain' ? Colors.orangeAccent : lime,
-              ),
-              title: Text(
-                '${row['provider'] == 'tidal' || row['kind'].toString().startsWith('tidal_favorite')
-                    ? 'Tidal favorite'
-                    : row['kind'].toString().startsWith('rating')
-                    ? 'YouTube rating'
-                    : 'YouTube history'} · ${row['state']}',
-              ),
-              subtitle: Text(row['detail'] ?? ''),
-            ),
-          TextButton.icon(
-            onPressed: r.refreshReport,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Refresh listening data'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget artwork(Song? song, double size) => ClipRRect(
     borderRadius: BorderRadius.circular(size * .16),
     child: Container(

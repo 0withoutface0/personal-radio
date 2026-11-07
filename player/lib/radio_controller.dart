@@ -1381,6 +1381,7 @@ class RadioController extends ChangeNotifier {
         'occurrence_id': entry.occurrenceId,
         'seconds': seconds,
         'completed': completed,
+        'played_at': DateTime.now().toUtc().toIso8601String(),
       },
     });
     await persist();
