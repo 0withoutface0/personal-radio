@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import androidx.annotation.Keep
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import java.io.File
@@ -29,7 +30,8 @@ object LocalEngineBridge {
     }
 }
 
-// Called from Python on a worker thread. Only ciphertext is persisted.
+// Python resolves seal and open by name at runtime. Keep them in release builds.
+@Keep
 class EngineVault {
     private val alias = "dev.personalradio.engine.v1"
 
