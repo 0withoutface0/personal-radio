@@ -27,7 +27,7 @@ Autoplay and Start radio use different request paths. Independently created sess
 
 ## Downloads and status
 
-[Download the Windows ZIP or Android APK](https://github.com/0withoutface0/youtube-tidal-radio/releases). These are early builds; each player needs a separately configured server and your own accounts.
+[Download the Windows ZIP or Android APK](https://github.com/0withoutface0/personal-radio/releases). These are early builds; each player needs a separately configured server and your own accounts.
 
 Windows playback, full standard FLAC playback, full 24-bit source decoding, queue pagination and Docker restart persistence have been checked. Physical Android screen-off/headset/interruption behavior, continuous full Hi-Res playback on both devices, and prolonged network recovery still need acceptance testing. **YouTube Recap inclusion is unverified**, independently of successful history submission.
 
@@ -38,8 +38,8 @@ See [verification status](docs/VERIFICATION.md) and [remaining acceptance work](
 Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/getting-started/installation/), and FFmpeg/ffprobe on `PATH`.
 
 ```sh
-git clone https://github.com/0withoutface0/youtube-tidal-radio.git
-cd youtube-tidal-radio
+git clone https://github.com/0withoutface0/personal-radio.git
+cd personal-radio
 uv sync --locked --extra dev
 uv run radio-prototype serve
 ```
