@@ -11,6 +11,7 @@ import 'api.dart';
 import 'appearance.dart';
 import 'disk.dart';
 import 'models.dart';
+import 'local_engine.dart';
 import 'playback_network.dart';
 
 class _PreparedTrack {
@@ -22,6 +23,8 @@ class _PreparedTrack {
 
 class RadioController extends ChangeNotifier {
   final RadioDisk disk;
+  final bool localMode;
+  Map<String, dynamic>? localAccounts;
   final FlutterSecureStorage secrets = const FlutterSecureStorage();
   RadioApi? api;
   mk.Player? player;
@@ -87,14 +90,18 @@ class RadioController extends ChangeNotifier {
       : null;
   bool get ready => api != null && connected;
   bool get changingQueue => busy || _advancing || _opening || _handoff;
-  RadioController(this.disk, {Duration Function()? leaseNow}) {
+  RadioController(
+    this.disk, {
+    this.localMode = false,
+    Duration Function()? leaseNow,
+  }) {
     _leaseNow = leaseNow ?? () => _time.elapsed;
   }
 
   Map<String, dynamic> snapshot() => {
     'version': 2,
     'device_id': deviceId,
-    'origin': origin,
+    'origin': localMode ? null : origin,
     'mode': mode,
     'title': queueTitle,
     'cursor': nextCursor,
@@ -133,11 +140,11 @@ class RadioController extends ChangeNotifier {
     update();
   }
 
-  Future<void> initialize() async {
+  Future<void> initialize({EngineEndpoint? endpoint}) async {
     final saved = await disk.load();
     appearance = RadioAppearance.fromJson(saved['appearance']);
     deviceId = saved['device_id'] ?? deviceId;
-    origin = saved['origin'] ?? origin;
+    origin = endpoint?.origin ?? saved['origin'] ?? origin;
     mode = saved['mode'] ?? mode;
     queueTitle = saved['title'] ?? queueTitle;
     nextCursor = saved['cursor'];
@@ -150,9 +157,11 @@ class RadioController extends ChangeNotifier {
         .map((j) => Map<String, dynamic>.from(j))
         .toList();
     restoreRatings(saved['ratings']);
-    token = await secrets.read(key: 'device_token') ?? '';
+    token = localMode
+        ? endpoint?.token ?? ''
+        : await secrets.read(key: 'device_token') ?? '';
     final pairingFile = Platform.environment['RADIO_PAIRING_FILE'];
-    if (pairingFile != null && token.isEmpty) {
+    if (!localMode && pairingFile != null && token.isEmpty) {
       // The development launcher can prefill a device token; it is never compiled into a binary.
       final pairing = await RadioDisk(File(pairingFile)).load();
       origin = pairing['origin'] ?? origin;
@@ -297,7 +306,8 @@ class RadioController extends ChangeNotifier {
         'Enter the device access token from your server.',
       );
     }
-    if (api != null &&
+    if (!localMode &&
+        api != null &&
         (origin != validated || token != accessToken.trim()) &&
         outbox.isNotEmpty) {
       throw const FormatException(
@@ -306,7 +316,15 @@ class RadioController extends ChangeNotifier {
     }
     final candidate = RadioApi(validated, accessToken.trim(), deviceId);
     try {
-      await candidate.call('/api/accounts');
+      final accounts = await candidate.call('/api/accounts');
+      if (localMode) {
+        if (accounts is! Map || accounts['embedded'] != true) {
+          throw const FormatException(
+            'The local engine could not be verified.',
+          );
+        }
+        localAccounts = Map<String, dynamic>.from(accounts);
+      }
     } catch (_) {
       candidate.close();
       rethrow;
@@ -316,19 +334,48 @@ class RadioController extends ChangeNotifier {
     api = candidate;
     origin = validated;
     token = accessToken.trim();
-    await secrets.write(key: 'device_token', value: token);
+    if (!localMode) await secrets.write(key: 'device_token', value: token);
     connected = true;
     home = null;
     homeError = null;
     homeLoading = false;
     _homeRequest++;
     error = null;
-    connectionMessage = 'Connected';
+    connectionMessage = localMode ? 'On this device' : 'Connected';
     await persist();
     update();
-    unawaited(loadStations());
-    unawaited(loadHome());
+    if (!localMode || accountLinked('youtube')) {
+      unawaited(loadStations());
+      unawaited(loadHome());
+    }
     unawaited(refreshReport());
+  }
+
+  bool accountLinked(String provider) =>
+      localAccounts?[provider]?['credential_file'] == true;
+
+  Future<void> refreshLocalAccounts({bool reloadHome = true}) async {
+    if (!localMode || !ready) return;
+    final client = api!;
+    final state = await client.call(
+      '/api/accounts',
+      timeout: const Duration(seconds: 4),
+    );
+    if (_disposed || !identical(api, client)) return;
+    final wasLinked = accountLinked('youtube');
+    localAccounts = Map<String, dynamic>.from(state);
+    if (reloadHome || wasLinked != accountLinked('youtube')) {
+      home = null;
+      homeError = null;
+      stations = [];
+      homeLoading = false;
+      _homeRequest++;
+      if (accountLinked('youtube')) {
+        unawaited(loadStations());
+        unawaited(loadHome());
+      }
+    }
+    update();
   }
 
   Future<void> search(String query, {String kind = 'songs'}) async {
@@ -1489,7 +1536,7 @@ class RadioController extends ChangeNotifier {
       if (sentRating || currentRating?.needsStatus == true) {
         await refreshReport();
       }
-      connectionMessage = 'Connected';
+      connectionMessage = localMode ? 'On this device' : 'Connected';
     } catch (e) {
       connectionMessage = 'Offline · listening events saved';
     } finally {
@@ -1617,13 +1664,22 @@ class RadioController extends ChangeNotifier {
 
 class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
   static const likeAction = 'personal_radio.like';
-  final RadioController radio;
+  RadioController radio;
   bool _stopped = true;
   RadioAudioHandler(this.radio) {
     ratingStyle.add(RatingStyle.heart);
     radio.transportChanged = publish;
     publish();
   }
+  void bind(RadioController controller) {
+    radio.transportChanged = null;
+    radio = controller;
+    radio.transportChanged = publish;
+    _stopped = true;
+    mediaItem.add(null);
+    publish();
+  }
+
   void publish() {
     if (radio.playing) _stopped = false;
     final current = radio.current;

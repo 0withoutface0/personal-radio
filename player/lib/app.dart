@@ -9,12 +9,15 @@ import 'appearance_dialog.dart';
 import 'catalog_view.dart';
 import 'listening_view.dart';
 import 'models.dart';
+import 'player_host.dart';
+import 'local_settings.dart';
 import 'radio_controller.dart';
 import 'song_actions.dart';
 
 class RadioApp extends StatefulWidget {
   final RadioController radio;
-  const RadioApp({super.key, required this.radio});
+  final PlayerHost? host;
+  const RadioApp({super.key, required this.radio, this.host});
   @override
   State<RadioApp> createState() => _RadioAppState();
 }
@@ -82,14 +85,15 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
                 ),
         child: child!,
       ),
-      home: RadioHome(radio: widget.radio),
+      home: RadioHome(radio: widget.radio, host: widget.host),
     ),
   );
 }
 
 class RadioHome extends StatefulWidget {
   final RadioController radio;
-  const RadioHome({super.key, required this.radio});
+  final PlayerHost? host;
+  const RadioHome({super.key, required this.radio, this.host});
   @override
   State<RadioHome> createState() => _RadioHomeState();
 }
@@ -399,8 +403,20 @@ class _RadioHomeState extends State<RadioHome> {
     2 => queueList(),
     _ => ListeningView(radio: r),
   };
-  Widget discover() =>
-      CatalogView(key: catalogKey, radio: r, search: search, focus: focus);
+  Widget discover() {
+    if (r.localMode &&
+        (!r.accountLinked('youtube') || !r.accountLinked('tidal'))) {
+      return Center(
+        child: FilledButton.icon(
+          onPressed: settings,
+          icon: const Icon(Icons.account_circle_outlined),
+          label: const Text('Set up your music accounts'),
+        ),
+      );
+    }
+    return CatalogView(key: catalogKey, radio: r, search: search, focus: focus);
+  }
+
   Widget stationList() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -959,6 +975,11 @@ class _RadioHomeState extends State<RadioHome> {
   }
 
   Future<void> settings() async {
+    final host = widget.host;
+    if (host != null && r.localMode) {
+      await showLocalSettings(context, host);
+      return;
+    }
     final address = TextEditingController(text: r.origin),
         access = TextEditingController(text: r.token);
     String? failure;
@@ -986,6 +1007,19 @@ class _RadioHomeState extends State<RadioHome> {
                     if (c.mounted) setDialog(() {});
                   },
                 ),
+                if (host?.supportsLocal == true)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.devices_outlined),
+                    title: const Text('Use this device'),
+                    subtitle: const Text('Keep the server profile for later'),
+                    onTap: host!.changing
+                        ? null
+                        : () {
+                            Navigator.pop(dialog);
+                            unawaited(host.switchMode(true));
+                          },
+                  ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: address,

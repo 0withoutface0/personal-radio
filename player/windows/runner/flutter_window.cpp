@@ -25,6 +25,35 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  engine_job_ = CreateJobObjectW(nullptr, nullptr);
+  if (engine_job_) {
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if (!SetInformationJobObject(engine_job_, JobObjectExtendedLimitInformation,
+                                 &limits, sizeof(limits))) {
+      CloseHandle(engine_job_);
+      engine_job_ = nullptr;
+    }
+  }
+  engine_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "dev.personalradio/local_engine",
+      &flutter::StandardMethodCodec::GetInstance());
+  engine_channel_->SetMethodCallHandler([this](const auto& call, auto result) {
+    if (call.method_name() != "ownProcess") {
+      result->NotImplemented();
+      return;
+    }
+    const auto* pid = std::get_if<int32_t>(call.arguments());
+    if (pid && *pid > 0 && engine_job_) {
+      HANDLE child = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, FALSE, *pid);
+      if (child) {
+        // The inherited stdin pipe also closes if the parent exits.
+        AssignProcessToJobObject(engine_job_, child);
+        CloseHandle(child);
+      }
+    }
+    result->Success();
+  });
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -40,6 +69,11 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  engine_channel_.reset();
+  if (engine_job_) {
+    CloseHandle(engine_job_);
+    engine_job_ = nullptr;
+  }
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

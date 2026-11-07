@@ -1,7 +1,7 @@
 name: personal_radio
 description: "Personal lossless radio for Windows and Android."
 publish_to: 'none'
-version: 0.5.0+12
+version: 0.6.0+13
 
 environment:
   sdk: ^3.13.7
@@ -20,6 +20,12 @@ dependencies:
   uuid: ^4.6.0
   # 2.x targets material_ui; 1.9 supplies Flutter Material ColorScheme objects.
   dynamic_color: 1.9.0
+  url_launcher: ^6.3.3
+  file_picker: ^13.3.2
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.5.0
+  cryptography: ^2.9.0
+  basic_utils: ^5.8.2
 
 dev_dependencies:
   integration_test:

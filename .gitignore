@@ -28,6 +28,7 @@ htmlcov/
 /seg-*.m4s
 player/build/
 player/.dart_tool/
+player/android/.kotlin/
 player/android/local.properties
 player/android/key.properties
 dist/

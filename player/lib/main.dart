@@ -6,10 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:path_provider/path_provider.dart';
 
 import 'app.dart';
-import 'disk.dart';
+import 'player_host.dart';
 import 'radio_controller.dart';
 
 Future<void> main() async {
@@ -26,14 +25,13 @@ Future<void> main() async {
     }
   });
   MediaKit.ensureInitialized();
-  final support = await getApplicationSupportDirectory();
-  final radio = RadioController(
-    RadioDisk(File('${support.path}/radio-state.json')),
-  );
-  await radio.initialize();
+  final host = PlayerHost();
+  await host.initialize();
+  final handler = RadioAudioHandler(host.radio);
+  host.audio = handler;
   if (Platform.isAndroid) {
     await AudioService.init(
-      builder: () => RadioAudioHandler(radio),
+      builder: () => handler,
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'dev.personalradio.playback',
         androidNotificationChannelName: 'Radio playback',
@@ -42,14 +40,20 @@ Future<void> main() async {
         androidNotificationIcon: 'drawable/ic_radio_notification',
       ),
     );
-  } else {
-    RadioAudioHandler(radio);
   }
   AppLifecycleListener(
+    onStateChange: (state) =>
+        host.setForeground(state == AppLifecycleState.resumed),
     onExitRequested: () async {
-      await radio.shutdown();
+      await host.shutdown();
       return AppExitResponse.exit;
     },
   );
-  runApp(RadioApp(radio: radio));
+  runApp(
+    AnimatedBuilder(
+      animation: host,
+      builder: (context, _) =>
+          RadioApp(key: ObjectKey(host.radio), radio: host.radio, host: host),
+    ),
+  );
 }
