@@ -45,6 +45,13 @@ class Store:
                     cursor TEXT PRIMARY KEY, session_id TEXT NOT NULL,
                     state TEXT NOT NULL, response TEXT, created TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS occurrence_accounts (
+                    occurrence_id TEXT PRIMARY KEY REFERENCES occurrences(id),
+                    youtube TEXT, tidal TEXT
+                );
+                CREATE TABLE IF NOT EXISTS imported_occurrences (
+                    occurrence_id TEXT PRIMARY KEY REFERENCES occurrences(id)
+                );
                 CREATE TABLE IF NOT EXISTS device_lease (
                     slot INTEGER PRIMARY KEY CHECK(slot=1), device_id TEXT NOT NULL,
                     expires REAL NOT NULL
@@ -77,7 +84,7 @@ class Store:
         finally:
             db.close()
 
-    def occurrence(self, track, video_id=None, occurrence_id=None):
+    def occurrence(self, track, video_id=None, occurrence_id=None, *, accounts=None):
         occurrence_id = occurrence_id or str(uuid4())
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -85,6 +92,7 @@ class Store:
                 "SELECT tidal_id,video_id FROM occurrences WHERE id=?", (occurrence_id,)
             ).fetchone()
             if old:
+                self._require_local_occurrence(db, occurrence_id)
                 if old["tidal_id"] != track["id"] or old["video_id"] != video_id:
                     raise ValueError("Occurrence ID reused with different recordings")
                 return occurrence_id
@@ -100,7 +108,27 @@ class Store:
                     now(),
                 ),
             )
+            if accounts is not None:
+                db.execute(
+                    "INSERT INTO occurrence_accounts VALUES (?,?,?)",
+                    (occurrence_id, accounts["youtube"], accounts["tidal"]),
+                )
         return occurrence_id
+
+    @staticmethod
+    def _require_local_occurrence(db, occurrence_id):
+        if db.execute(
+            "SELECT 1 FROM imported_occurrences WHERE occurrence_id=?", (occurrence_id,)
+        ).fetchone():
+            raise ValueError("Imported history cannot create provider activity")
+
+    def bound_account(self, occurrence_id, provider):
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT youtube,tidal FROM occurrence_accounts WHERE occurrence_id=?",
+                (occurrence_id,),
+            ).fetchone()
+        return row[provider] if row else None
 
     def get_occurrence(self, occurrence_id):
         with self.connect() as db:
@@ -127,6 +155,7 @@ class Store:
             track = db.execute("SELECT * FROM occurrences WHERE id=?", (occurrence_id,)).fetchone()
             if not track:
                 raise KeyError("Unknown occurrence")
+            self._require_local_occurrence(db, occurrence_id)
             db.execute(
                 "INSERT INTO events (id, occurrence_id, seconds, completed, created, played_at) "
                 "VALUES (?,?,?,?,?,?)",
@@ -173,6 +202,7 @@ class Store:
             ).fetchone()
             if not row or not row["video_id"]:
                 raise ValueError("Occurrence needs a YouTube video ID")
+            self._require_local_occurrence(db, occurrence_id)
             kind = "rating:" + event_id if event_id else "rating"
             old = db.execute(
                 "SELECT value FROM submissions WHERE occurrence_id=? AND kind=?",
@@ -191,11 +221,16 @@ class Store:
                     if not saved or saved["value"] != expected:
                         raise ValueError("Rating event ID reused with different Tidal intent")
                 return
+            scope = (
+                " AND (SELECT youtube FROM occurrence_accounts WHERE occurrence_id=o.id) IS "
+                "(SELECT youtube FROM occurrence_accounts WHERE occurrence_id=?)"
+            )
             previous = db.execute(
                 "SELECT s.value FROM submissions s JOIN occurrences o ON o.id=s.occurrence_id "
                 "WHERE o.video_id=? AND (s.kind='rating' OR s.kind LIKE 'rating:%') "
-                "ORDER BY s.created DESC, s.rowid DESC LIMIT 1",
-                (row["video_id"],),
+                + scope
+                + " ORDER BY s.created DESC, s.rowid DESC LIMIT 1",
+                (row["video_id"], occurrence_id),
             ).fetchone()
             desired = tidal_favorite
             if desired is None:
@@ -208,16 +243,23 @@ class Store:
             db.execute(
                 "UPDATE submissions SET state='superseded',detail=?,updated=? "
                 "WHERE state='pending' AND (kind='rating' OR kind LIKE 'rating:%') "
-                "AND occurrence_id IN (SELECT id FROM occurrences WHERE video_id=?)",
-                ("Replaced by a newer explicit rating", now(), row["video_id"]),
+                "AND occurrence_id IN (SELECT id FROM occurrences o WHERE video_id=?" + scope + ")",
+                ("Replaced by a newer explicit rating", now(), row["video_id"], occurrence_id),
             )
             self._schedule(db, occurrence_id, kind, rating)
             if desired is not None:
                 db.execute(
                     "UPDATE submissions SET state='superseded',detail=?,updated=? "
                     "WHERE state='pending' AND (kind='tidal_favorite' OR kind LIKE 'tidal_favorite:%') "
-                    "AND occurrence_id IN (SELECT id FROM occurrences WHERE tidal_id=?)",
-                    ("Replaced by a newer explicit favorite choice", now(), row["tidal_id"]),
+                    "AND occurrence_id IN (SELECT id FROM occurrences o WHERE tidal_id=?"
+                    + scope.replace("SELECT youtube", "SELECT tidal")
+                    + ")",
+                    (
+                        "Replaced by a newer explicit favorite choice",
+                        now(),
+                        row["tidal_id"],
+                        occurrence_id,
+                    ),
                 )
                 self._schedule(db, occurrence_id, tidal_kind, "LIKE" if desired else "INDIFFERENT")
 

@@ -7,6 +7,7 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from pydantic import AwareDatetime, BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -122,16 +123,17 @@ class PlaybackInput(BaseModel):
     source_codec: str | None = None
 
 
-def create_app(settings=None, providers=None):
+def create_app(settings=None, providers=None, *, runtime_token=None, embedded=False):
     settings = settings or Settings.from_env()
     store = Store(settings.data / "radio.sqlite3")
     providers = providers or Providers(settings)
+    local_accounts = embedded and hasattr(providers, "identity")
     streams = Streams(providers)
-    reporter = Reporter(store, providers)
+    reporter = Reporter(store, providers, bound_accounts=local_accounts)
     autoplay = Autoplay(providers, store)
     catalog = Catalog(providers)
     home = HomeFeed(providers)
-    token = settings.device_token()
+    token = runtime_token or settings.device_token()
     session_token = secrets.token_urlsafe(32)
     jobs = {}
     decode_lock = threading.Lock()
@@ -142,7 +144,17 @@ def create_app(settings=None, providers=None):
         redoc_url=None,
         openapi_url=None,
     )
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=["127.0.0.1"] if embedded else settings.allowed_hosts,
+    )
+    if embedded:
+
+        @app.exception_handler(RequestValidationError)
+        async def invalid_local_input(_request, _error):
+            # Validation errors normally reflect input, including pasted credentials.
+            return JSONResponse({"detail": "Invalid input."}, status_code=422)
+
     app.state.store = store
     app.state.streams = streams
     app.state.reporter = reporter
@@ -194,6 +206,10 @@ def create_app(settings=None, providers=None):
 
     protected = [Depends(authorize)]
     dispatch_lock = threading.Lock()
+    if local_accounts:
+        from .local_api import account_routes
+
+        app.include_router(account_routes(providers, authorize))
 
     def playback_device(request: Request):
         if not store.owns_lease(request.headers.get("x-device-id", "")):
@@ -221,6 +237,8 @@ def create_app(settings=None, providers=None):
 
     @app.get("/api/accounts", dependencies=protected)
     def accounts():
+        if local_accounts:
+            return {**providers.status(), "embedded": True, "recap": "unverified"}
         return {
             "youtube": {"credential_file": settings.youtube_file.exists()},
             "tidal": {"credential_file": settings.tidal_file.exists(), "required_auth": "PKCE"},
@@ -383,6 +401,10 @@ def create_app(settings=None, providers=None):
         import subprocess
 
         plan = streams.get(str(stream_id))
+        if embedded:
+            from .source_probe import source_quality
+
+            return source_quality(streams, str(stream_id), plan)
         suffix = "manifest.m3u8" if plan.kind == "hls" else "assets/0.flac"
         origin = os.environ.get("RADIO_INTERNAL_ORIGIN", "http://127.0.0.1:8765")
         options = ["-allowed_extensions", "ALL"] if plan.kind == "hls" else []
@@ -468,9 +490,19 @@ def create_app(settings=None, providers=None):
     @app.post("/api/occurrences", dependencies=protected)
     def occurrence(body: OccurrenceInput):
         # Pairing IDs here is deliberate prototype input; use /api/match before listening.
-        track = providers.track(body.tidal_id)
+        if local_accounts:
+            with providers.lock:
+                track = providers.track(body.tidal_id)
+                bindings = {name: providers.identity(name) for name in ("youtube", "tidal")}
+        else:
+            track, bindings = providers.track(body.tidal_id), None
         return {
-            "id": store.occurrence(track, body.video_id, str(body.id) if body.id else None),
+            "id": store.occurrence(
+                track,
+                body.video_id,
+                str(body.id) if body.id else None,
+                accounts=bindings,
+            ),
             "track": track,
         }
 
@@ -559,6 +591,8 @@ def create_app(settings=None, providers=None):
 
     @app.post("/api/checks/decode", dependencies=protected, status_code=202)
     def decode(body: DecodeInput, request: Request):
+        if embedded:
+            raise HTTPException(404, "Full decode diagnostics run on the development server.")
         if not decode_lock.acquire(blocking=False):
             raise HTTPException(409, "One decode check is already running")
         try:

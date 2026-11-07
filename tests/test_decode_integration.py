@@ -249,3 +249,14 @@ def test_player_counts_fixture_playback_without_provider_dispatch(service):
     assert result["source_codec"] == "flac"
     assert app.state.store.get_occurrence(result["occurrence_id"])["listened"] >= 2
     assert app.state.store.submissions() == []
+
+
+def test_embedded_quality_reads_real_flac_and_fragmented_flac_headers(audio):
+    from radio_prototype.source_probe import probe_resolution
+
+    root, _ = audio
+    assert probe_resolution((root / "standard.flac").read_bytes()[:42], "direct") == (16, 44100)
+    assert probe_resolution((root / "hires.flac").read_bytes()[:42], "direct") == (24, 96000)
+    assert probe_resolution((root / "dash/init.mp4").read_bytes(), "hls") == (24, 96000)
+    with pytest.raises(ValueError):
+        probe_resolution(b"not a FLAC stream", "direct")

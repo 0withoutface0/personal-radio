@@ -326,6 +326,9 @@ class Providers:
                 return outcomes[0]
             return result
 
+    def save_tidal(self, session):
+        session.save_session_to_file(self.settings.tidal_file)
+
     def track(self, track_id):
         with self.lock:
             return tidal_track(self.td().track(track_id))
@@ -335,8 +338,8 @@ class Providers:
             session = self.td()
             session.audio_quality = quality
             stream = session.track(track_id).get_stream()
-            # Persist potentially rotated refresh tokens after every authenticated operation.
-            session.save_session_to_file(self.settings.tidal_file)
+            # Preserve potentially rotated refresh tokens.
+            self.save_tidal(session)
             return stream
 
     def submit_history(self, video_id):
@@ -380,7 +383,7 @@ class Providers:
                 action = favorites.add_track if favorite else favorites.remove_track
                 return action(str(track_id))
             finally:
-                session.save_session_to_file(self.settings.tidal_file)
+                self.save_tidal(session)
 
     def check_tidal_favorite(self, track_id, favorite):
         # Search the collection rather than the catalog: streaming availability and

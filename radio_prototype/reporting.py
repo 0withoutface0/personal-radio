@@ -1,20 +1,36 @@
 import json
 import threading
+from contextlib import nullcontext
 
 from .providers import ProviderUnavailable
 
 
 class Reporter:
-    def __init__(self, store, providers):
+    def __init__(self, store, providers, *, bound_accounts=False):
         self.store = store
         self.providers = providers
         self.lock = threading.Lock()
+        self.bound_accounts = bound_accounts
+
+    def _matches(self, row):
+        if not self.bound_accounts:
+            return True
+        identity = self.store.bound_account(row["occurrence_id"], row["provider"])
+        return bool(identity and identity == self.providers.identity(row["provider"]))
 
     def flush(self):
         # Explicit dispatch only during the prototype. Pending work survives restarts.
-        with self.lock:
+        with self.lock, self.providers.lock if self.bound_accounts else nullcontext():
             for row in self.store.submissions():
                 if row["state"] != "pending":
+                    continue
+                if not self._matches(row):
+                    self.store.outcome(
+                        row["id"],
+                        "pending",
+                        "Held for the original account; identity could not be verified.",
+                        expected_state="pending",
+                    )
                     continue
                 # Preflight failures have not sent any mutation and remain safely pending.
                 try:
@@ -72,11 +88,17 @@ class Reporter:
             self.reconcile()
 
     def reconcile(self):
+        with self.providers.lock if self.bound_accounts else nullcontext():
+            self._reconcile()
+
+    def _reconcile(self):
         rows = [
             row for row in self.store.submissions() if row["state"] in ("submitted", "uncertain")
         ]
         history = None
         for row in rows:
+            if not self._matches(row):
+                continue
             try:
                 if row["provider"] == "tidal":
                     if self.providers.check_tidal_favorite(row["tidal_id"], row["value"] == "LIKE"):
