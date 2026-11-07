@@ -24,7 +24,8 @@ class Store:
                 );
                 CREATE TABLE IF NOT EXISTS events (
                     id TEXT PRIMARY KEY, occurrence_id TEXT NOT NULL REFERENCES occurrences(id),
-                    seconds REAL NOT NULL, completed INTEGER NOT NULL, created TEXT NOT NULL
+                    seconds REAL NOT NULL, completed INTEGER NOT NULL, created TEXT NOT NULL,
+                    played_at TEXT
                 );
                 CREATE TABLE IF NOT EXISTS submissions (
                     id TEXT PRIMARY KEY, occurrence_id TEXT NOT NULL REFERENCES occurrences(id),
@@ -52,6 +53,13 @@ class Store:
             columns = {row["name"] for row in db.execute("PRAGMA table_info(submissions)")}
             if "baseline" not in columns:
                 db.execute("ALTER TABLE submissions ADD COLUMN baseline TEXT")
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(events)")}
+            if "played_at" not in columns:
+                db.execute("ALTER TABLE events ADD COLUMN played_at TEXT")
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS heard_at ON events(COALESCE(played_at, created)) "
+                "WHERE seconds > 0"
+            )
             # A process may have died after a request was accepted by YouTube.
             db.execute(
                 "UPDATE submissions SET state='uncertain', detail=? WHERE state='sending'",
@@ -101,7 +109,7 @@ class Store:
             raise KeyError("Unknown occurrence")
         return dict(row)
 
-    def event(self, event_id, occurrence_id, seconds, completed=False):
+    def event(self, event_id, occurrence_id, seconds, completed=False, *, played_at=None):
         if not 0 <= seconds <= 5:
             raise ValueError("Playback intervals must be between 0 and 5 seconds")
         with self.connect() as db:
@@ -109,19 +117,20 @@ class Store:
             db.execute("BEGIN IMMEDIATE")
             old = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
             if old:
-                if (old["occurrence_id"], old["seconds"], bool(old["completed"])) != (
-                    occurrence_id,
-                    seconds,
-                    completed,
-                ):
+                payload = (occurrence_id, seconds, completed)
+                saved = (old["occurrence_id"], old["seconds"], bool(old["completed"]))
+                # An older server may have acknowledged the event without its timestamp.
+                changed_time = played_at and old["played_at"] and played_at != old["played_at"]
+                if saved != payload or changed_time:
                     raise ValueError("Event ID reused with a different payload")
                 return False
             track = db.execute("SELECT * FROM occurrences WHERE id=?", (occurrence_id,)).fetchone()
             if not track:
                 raise KeyError("Unknown occurrence")
             db.execute(
-                "INSERT INTO events VALUES (?,?,?,?,?)",
-                (event_id, occurrence_id, seconds, int(completed), now()),
+                "INSERT INTO events (id, occurrence_id, seconds, completed, created, played_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (event_id, occurrence_id, seconds, int(completed), now(), played_at),
             )
             db.execute(
                 "UPDATE occurrences SET listened=listened+?, completed=MAX(completed,?) WHERE id=?",

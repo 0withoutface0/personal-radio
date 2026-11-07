@@ -184,3 +184,19 @@ def test_library_get_song_and_history_call_use_same_instance(tmp_path, monkeypat
 
     monkeypatch.setattr(providers, "yt", lambda: YouTube())
     assert providers.submit_history("song") == 204
+
+
+def test_listening_event_timestamp_migration_preserves_existing_rows(store):
+    occurrence = store.occurrence(
+        {"id": 5, "title": "Legacy", "artists": ["Artist"], "duration": 90},
+    )
+    assert store.event("old-event", occurrence, 3)
+    with store.connect() as db:
+        db.execute("DROP INDEX heard_at")
+        db.execute("ALTER TABLE events DROP COLUMN played_at")
+    reopened = Store(store.path)
+    assert not reopened.event("old-event", occurrence, 3)
+    assert not reopened.event("old-event", occurrence, 3, played_at="2026-10-25T12:00:00+00:00")
+    assert reopened.get_occurrence(occurrence)["listened"] == 3
+    with reopened.connect() as db:
+        assert db.execute("SELECT played_at FROM events").fetchone()[0] is None

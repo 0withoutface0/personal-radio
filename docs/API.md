@@ -30,6 +30,7 @@ The complete schemas are generated at authenticated `GET /api/openapi.json`. A c
 | `POST /api/checks/decode` | `{tidal_id, expect_hires}`; starts one full-source decoder job, returns HTTP 202 and job UUID |
 | `GET /api/checks/{uuid}` | In-memory decoder job status; durable results are also in the report |
 | `POST /api/checks/playback` | mpv harness results linked to a prior successful decode and durable occurrence totals |
+| `POST /api/listening` | Read calendar activity, listening totals and rankings |
 | `GET /api/report` | Evidence, integration gate, listening totals, top songs, and reporting states |
 
 `POST /setup/youtube` accepts `{text: browser_headers}`; `POST /setup/tidal/start` begins local PKCE; `POST /setup/tidal/finish` accepts `{text: redirect_url}`. All setup endpoints are disabled with `RADIO_LOCAL_SETUP=0`.
@@ -87,3 +88,11 @@ Home reads are cached for five minutes; `?refresh=true` fetches again. A valid s
 ## Prepared playback (client v0.4.0)
 
 The client may resolve `POST /api/streams` for the next matched queue entry before EOF. This does not register an occurrence or report listening. When native playback advances to that entry, the client durably enqueues `POST /api/occurrences` with the existing queue UUID before any of its `/api/events` or `/api/ratings` submissions. Registration remains idempotent across retries. Audio preparation uses authenticated proxy URLs, never provider credentials. No server protocol change is required; native memory buffers are discarded on pause/seek or relevant queue changes.
+
+## Listening dashboard (API 0.5.0)
+
+`POST /api/listening` accepts 2 to 33 strictly increasing timezone-aware `boundaries` and optional `all_time`. Each adjacent pair defines a chart bucket with an inclusive start and exclusive end. The player calculates calendar boundaries in the device's time zone, including daylight saving changes. With `all_time: true`, totals and rankings also include listening before the first boundary. Older activity appears in a bucket with a null start.
+
+The response includes `first_played_at`, `totals` (seconds, plays, unique recordings and artist credits), `buckets`, `top_songs`, `most_played`, `liked_songs` and `top_artists`. A play means one occurrence with positive listening time inside the range. An occurrence heard on both sides of midnight contributes time to both days and counts once in a combined range. Liked songs reflect the latest choice recorded in Personal Radio for recordings heard in the period.
+
+New `POST /api/events` requests may include `played_at`, the timezone-aware time the device measured the interval. Retries reuse the same event ID and timestamp. Older events keep their server receipt times. Dashboard reads use the saved database and device token, independent of provider account availability or history reporting.

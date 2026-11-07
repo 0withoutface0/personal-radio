@@ -303,3 +303,81 @@ def test_explicit_rating_changes_have_distinct_retry_safe_event_ids(api):
     rows = app.state.store.submissions()
     assert len(rows) == 4
     assert {row["provider"] for row in rows} == {"youtube", "tidal"}
+
+
+def test_listening_buckets_deduplicate_and_keep_offline_play_dates(api, monkeypatch):
+    client, _, auth = api
+    monkeypatch.setattr("radio_prototype.store.now", lambda: "2026-10-26T12:00:00+00:00")
+
+    def occurrence(track):
+        return client.post(
+            "/api/occurrences", headers=auth, json={"tidal_id": track, "video_id": str(track)}
+        ).json()["id"]
+
+    def event(occurrence_id, seconds, **extra):
+        body = {"id": str(uuid4()), "occurrence_id": occurrence_id, "seconds": seconds, **extra}
+        assert client.post("/api/events", headers=auth, json=body).json()["inserted"]
+        assert not client.post("/api/events", headers=auth, json=body).json()["inserted"]
+        return body
+
+    first, repeat, other, never_heard = [occurrence(track) for track in (1, 1, 2, 3)]
+    # Offset changes overnight. The two 02:00 hours are separate chart buckets.
+    offline = event(first, 3, played_at="2026-10-25T02:30:00+02:00")
+    event(first, 2, played_at="2026-10-25T02:00:00+01:00")
+    event(repeat, 4, played_at="2026-10-25T02:30:00+01:00")
+    event(other, 5)  # Old clients still use the server receipt timestamp.
+    event(never_heard, 0, completed=True)
+    assert (
+        client.post(
+            "/api/events", headers=auth, json=offline | {"played_at": "2026-10-25T04:00:00Z"}
+        ).status_code
+        == 422
+    )
+    for occurrence_id, choice in [(first, "LIKE"), (other, "LIKE"), (other, "INDIFFERENT")]:
+        assert (
+            client.post(
+                "/api/ratings",
+                headers=auth,
+                json={"occurrence_id": occurrence_id, "id": str(uuid4()), "value": choice},
+            ).status_code
+            == 200
+        )
+
+    boundaries = [
+        "2026-10-25T02:00:00+02:00",
+        "2026-10-25T02:00:00+01:00",
+        "2026-10-25T03:00:00+01:00",
+    ]
+    request = {"boundaries": boundaries}
+    assert client.post("/api/listening", json=request).status_code == 401
+    day = client.post("/api/listening", headers=auth, json=request).json()
+    assert day["first_played_at"] == "2026-10-25T00:30:00+00:00"
+    assert day["totals"] == {"listened_seconds": 9, "plays": 2, "songs": 1, "artists": 1}
+    assert [row["listened_seconds"] for row in day["buckets"]] == [3, 6]
+    assert day["most_played"][0]["plays"] == 2
+    assert [row["tidal_id"] for row in day["liked_songs"]] == [1]
+
+    all_time = client.post(
+        "/api/listening",
+        headers=auth,
+        json={"boundaries": ["2026-10-26T00:00:00Z", "2026-10-27T00:00:00Z"], "all_time": True},
+    ).json()
+    assert all_time["totals"] == {"listened_seconds": 14, "plays": 3, "songs": 2, "artists": 1}
+    assert all_time["buckets"][0]["start"] is None
+    assert [row["listened_seconds"] for row in all_time["buckets"]] == [9, 5]
+    assert [row["tidal_id"] for row in all_time["liked_songs"]] == [1]
+    assert all_time["top_artists"][0]["listened_seconds"] == 14
+    assert (
+        client.post(
+            "/api/listening", headers=auth, json={"boundaries": boundaries[::-1]}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/api/listening",
+            headers=auth,
+            json={"boundaries": ["2026-10-25T00:00:00", boundaries[-1]]},
+        ).status_code
+        == 422
+    )

@@ -1,19 +1,21 @@
 import os
 import secrets
 import threading
+from datetime import UTC
 from pathlib import Path
 from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .autoplay import Autoplay
 from .catalog import Catalog
 from .config import Settings
 from .home import HomeFeed
+from .listening import listening_stats
 from .providers import Providers, ProviderUnavailable
 from .reporting import Reporter
 from .store import Store
@@ -71,6 +73,12 @@ class EventInput(BaseModel):
     occurrence_id: UUID
     seconds: float = Field(ge=0, le=5, allow_inf_nan=False)
     completed: bool = False
+    played_at: AwareDatetime | None = None
+
+
+class ListeningInput(BaseModel):
+    boundaries: list[AwareDatetime] = Field(min_length=2, max_length=33)
+    all_time: bool = False
 
 
 class RatingInput(BaseModel):
@@ -129,7 +137,7 @@ def create_app(settings=None, providers=None):
     decode_lock = threading.Lock()
     app = FastAPI(
         title="Personal lossless radio",
-        version="0.4.1",
+        version="0.5.0",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -472,7 +480,13 @@ def create_app(settings=None, providers=None):
 
     @app.post("/api/events", dependencies=protected)
     def event(body: EventInput):
-        inserted = store.event(str(body.id), str(body.occurrence_id), body.seconds, body.completed)
+        inserted = store.event(
+            str(body.id),
+            str(body.occurrence_id),
+            body.seconds,
+            body.completed,
+            played_at=body.played_at.astimezone(UTC).isoformat() if body.played_at else None,
+        )
         return {"inserted": inserted, "occurrence": store.get_occurrence(str(body.occurrence_id))}
 
     @app.post("/api/checks/playback", dependencies=protected)
@@ -571,6 +585,13 @@ def create_app(settings=None, providers=None):
     @app.get("/api/checks/{job_id}", dependencies=protected)
     def job(job_id: UUID):
         return jobs[str(job_id)]
+
+    @app.post("/api/listening", dependencies=protected)
+    def listening(body: ListeningInput):
+        boundaries = [value.astimezone(UTC).isoformat() for value in body.boundaries]
+        if any(start >= end for start, end in zip(boundaries, boundaries[1:])):
+            raise HTTPException(422, "Listening boundaries must increase in time.")
+        return listening_stats(store, boundaries, all_time=body.all_time)
 
     @app.get("/api/report", dependencies=protected)
     def report():

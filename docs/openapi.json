@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Personal lossless radio",
-    "version": "0.4.1"
+    "version": "0.5.0"
   },
   "paths": {
     "/": {
@@ -1145,6 +1145,42 @@
         }
       }
     },
+    "/api/listening": {
+      "post": {
+        "summary": "Listening",
+        "operationId": "listening_api_listening_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListeningInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/report": {
       "get": {
         "summary": "Report",
@@ -1351,6 +1387,18 @@
             "type": "boolean",
             "title": "Completed",
             "default": false
+          },
+          "played_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Played At"
           }
         },
         "type": "object",
@@ -1418,6 +1466,30 @@
           "device_id"
         ],
         "title": "LeaseInput"
+      },
+      "ListeningInput": {
+        "properties": {
+          "boundaries": {
+            "items": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "type": "array",
+            "maxItems": 33,
+            "minItems": 2,
+            "title": "Boundaries"
+          },
+          "all_time": {
+            "type": "boolean",
+            "title": "All Time",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "boundaries"
+        ],
+        "title": "ListeningInput"
       },
       "OccurrenceInput": {
         "properties": {
