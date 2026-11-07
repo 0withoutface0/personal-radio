@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import requests
 from ytmusicapi import YTMusic
+from ytmusicapi.exceptions import YTMusicError
 
 from .providers import Providers, ProviderUnavailable
 
@@ -15,12 +16,18 @@ YOUTUBE_HEADERS = ("authorization", "cookie", "x-goog-authuser", "x-goog-pageid"
 
 
 def browser_auth(text):
-    if text.lstrip().startswith("{"):
+    text = text.strip()
+    if not text:
+        raise ValueError("Expected YouTube browser credentials")
+    if text.startswith("{"):
         data = json.loads(text)
     else:
         import ytmusicapi
 
-        data = json.loads(ytmusicapi.setup(headers_raw=text))
+        # DevTools can copy CRLF on Windows. The upstream parser splits on LF only.
+        raw = "\n".join(text.splitlines())
+        # Supply the normal default while letting an explicit account selector override it.
+        data = json.loads(ytmusicapi.setup(headers_raw="x-goog-authuser: 0\n" + raw))
     if not isinstance(data, dict):
         raise ValueError("Expected YouTube browser credentials")
     data = {key.lower(): value for key, value in data.items()}
@@ -103,11 +110,27 @@ class LocalProviders(Providers):
         with self.lock:
             try:
                 auth = browser_auth(headers)
+            except (ValueError, YTMusicError):
+                raise ProviderUnavailable(
+                    "Could not read the copied headers. Copy the full Request Headers from a "
+                    "signed-in YouTube Music browse request, including Cookie and Authorization."
+                ) from None
+            try:
                 client = youtube_client(auth)
                 info = client.get_account_info()
+            except FileNotFoundError:
+                raise ProviderUnavailable(
+                    "This installation is missing YouTube Music support files. "
+                    "Update Personal Radio and try again."
+                ) from None
+            except (requests.ConnectionError, requests.Timeout):
+                raise ProviderUnavailable(
+                    "Could not reach YouTube Music. Check this device's connection and try again."
+                ) from None
             except Exception:
                 raise ProviderUnavailable(
-                    "YouTube could not verify this session. Sign in again and retry."
+                    "YouTube Music could not verify the session. Sign in at music.youtube.com "
+                    "and copy fresh headers from a browse request."
                 ) from None
             handle = info.get("channelHandle")
             label = handle or info.get("accountName") or "YouTube Music"

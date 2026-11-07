@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from radio_prototype.api import create_app
 from radio_prototype.config import Settings
 from radio_prototype.embedded import Engine
-from radio_prototype.local_accounts import LocalProviders
+from radio_prototype.local_accounts import LocalProviders, browser_auth
 from radio_prototype.vault import windows_vault
 
 
@@ -87,6 +87,85 @@ def test_browser_connect_requires_one_time_approval_and_redacts_invalid_input(
         assert response.status_code == 422 and "secret" not in response.text
         assert client.delete("/api/local/accounts/youtube", headers=auth).status_code == 200
         assert vault.records == {}
+
+
+@pytest.mark.parametrize(
+    "selector,expected",
+    [("", "0"), ("X-Goog-AuthUser: 2\r\n", "2"), ("X-Goog-AuthUser:\r\n3\r\n", "3")],
+)
+def test_browser_auth_accepts_windows_copy_formats(selector, expected):
+    pasted = (
+        "POST /youtubei/v1/browse HTTP/2\r\n"
+        "Cookie: __Secure-3PAPISID=fixture\r\n"
+        "Authorization: SAPISIDHASH fixture\r\n"
+        + selector
+    )
+    assert browser_auth(pasted) == {
+        "cookie": "__Secure-3PAPISID=fixture",
+        "authorization": "SAPISIDHASH fixture",
+        "x-goog-authuser": expected,
+        "x-origin": "https://music.youtube.com",
+    }
+
+
+def test_pasted_headers_connect_through_the_real_youtube_client(tmp_path, monkeypatch):
+    from urllib.parse import urlsplit
+
+    visited = []
+    channel = "UC" + "a" * 22
+    account = {
+        "accountName": {"runs": [{"text": "Fixture"}]},
+        "channelHandle": {"runs": [{"text": "@fixture"}]},
+        "accountPhoto": {"thumbnails": [{"url": "https://example.invalid/photo"}]},
+    }
+    menu = {"multiPageMenuRenderer": {"header": {"activeAccountHeaderRenderer": account}}}
+    replies = {
+        "": b'ytcfg.set({"VISITOR_DATA":"fixture"});',
+        "/youtubei/v1/account/account_menu": json.dumps(
+            {"actions": [{"openPopupAction": {"popup": menu}}]}
+        ).encode(),
+        "/youtubei/v1/navigation/resolve_url": json.dumps(
+            {"endpoint": {"browseEndpoint": {"browseId": channel}}}
+        ).encode(),
+    }
+
+    def request(_self, _method, url, **kwargs):
+        target = urlsplit(url)
+        assert target.netloc == "music.youtube.com"
+        visited.append(target.path)
+        if target.path:
+            assert kwargs["headers"]["x-goog-authuser"] == "2"
+        response = requests.Response()
+        response.status_code = 200
+        response._content = replies[target.path]
+        return response
+
+    monkeypatch.setattr(requests.Session, "request", request)
+    settings = Settings(tmp_path, local_setup=False)
+    vault = MemoryVault()
+    providers = LocalProviders(settings, vault)
+    app = create_app(settings, providers, runtime_token="device-test", embedded=True)
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        url = "/api/local/accounts/youtube"
+        headers = {"Authorization": "Bearer device-test"}
+        invalid = client.post(url, headers=headers, json={"text": "Cookie: private-fixture"})
+        assert invalid.status_code == 503
+        assert "Copy the full Request Headers" in invalid.json()["detail"]
+        assert "private-fixture" not in invalid.text
+        assert not visited and not vault.records
+
+        valid = client.post(
+            url,
+            headers=headers,
+            json={
+                "text": "Cookie: __Secure-3PAPISID=fixture\r\n"
+                "Authorization: SAPISIDHASH fixture\r\nX-Goog-AuthUser: 2\r\n"
+            },
+        )
+        assert valid.status_code == 200
+        assert valid.json() == {"credential_file": True, "label": "@fixture", "reporting": True}
+        assert providers.identity("youtube") == channel
+        assert visited == list(replies)
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows DPAPI")
