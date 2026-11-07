@@ -84,13 +84,14 @@ class _DesktopCodeState extends State<_DesktopCode> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+    scrollable: true,
     title: Text(
       offer.code.purpose == PairPurpose.youtube
           ? 'Connect YouTube on Android'
           : 'Pair Android listening history',
     ),
     content: SizedBox(
-      width: 320,
+      width: 380,
       child: ValueListenableBuilder<String?>(
         valueListenable: offer.incoming,
         builder: (context, incoming, _) => Column(
@@ -113,13 +114,16 @@ class _DesktopCodeState extends State<_DesktopCode> {
                   child: const Text('Approve phone'),
                 ),
             ] else ...[
-              const Text(
-                'Use the matching pairing option on your phone while both devices are on the same private network. The code expires in five minutes.',
+              Text(
+                'On your phone, choose ${offer.code.purpose.androidAction}. Keep both '
+                'devices on the same private network. The code expires in five minutes.',
               ),
               const SizedBox(height: 12),
               QrImageView(
                 data: offer.code.encode(),
-                size: 225,
+                size: 340,
+                padding: const EdgeInsets.all(28),
+                errorCorrectionLevel: QrErrorCorrectLevel.M,
                 backgroundColor: Colors.white,
                 eyeStyle: const QrEyeStyle(
                   eyeShape: QrEyeShape.square,
@@ -166,7 +170,11 @@ Future<String?> receiveDesktopCode(
   final selection = await showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Pair with Windows'),
+      title: Text(
+        purpose == PairPurpose.youtube
+            ? 'Connect YouTube from Windows'
+            : 'Pair listening history with Windows',
+      ),
       content: Text(
         purpose == PairPurpose.youtube
             ? 'Import a YouTube Music session from Windows. Use this only with a PC and an account you trust.'
@@ -188,14 +196,18 @@ Future<String?> receiveDesktopCode(
       ],
     ),
   );
-  if (selection == 'paste') {
-    final code = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
-    if (code == null) throw const FormatException('Copy a desktop code first.');
-    return code;
-  }
+  if (selection == 'paste') return _readDesktopCode();
   if (selection != 'scan' || !context.mounted) return null;
   return Navigator.of(context)
       .push<String>(MaterialPageRoute(builder: (_) => _PairScanner(purpose)));
+}
+
+Future<String> _readDesktopCode() async {
+  final code = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+  if (code == null || code.trim().isEmpty) {
+    throw const FormatException('Copy a desktop pairing code first.');
+  }
+  return code;
 }
 
 class _PairScanner extends StatefulWidget {
@@ -206,31 +218,115 @@ class _PairScanner extends StatefulWidget {
   State<_PairScanner> createState() => _PairScannerState();
 }
 
-class _PairScannerState extends State<_PairScanner> {
+class _PairScannerState extends State<_PairScanner>
+    with WidgetsBindingObserver {
+  final scanner = MobileScannerController(
+    cameraResolution: const Size(1280, 720),
+    formats: const [BarcodeFormat.qrCode],
+  );
   bool found = false;
+  String? feedback;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (found || !scanner.value.hasCameraPermission) return;
+    if (state == AppLifecycleState.resumed) unawaited(scanner.start());
+    if (state == AppLifecycleState.inactive) unawaited(scanner.stop());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(scanner.dispose());
+    super.dispose();
+  }
+
+  void _showFeedback(String message) {
+    if (mounted && !found && message != feedback) {
+      setState(() => feedback = message);
+    }
+  }
+
+  bool _accept(String code) {
+    if (found || !mounted) return false;
+    try {
+      PairCode.decode(code, widget.purpose);
+    } on FormatException catch (error) {
+      _showFeedback(error.message);
+      return false;
+    }
+    found = true;
+    Navigator.pop(context, code);
+    return true;
+  }
+
+  Future<void> _paste() async {
+    try {
+      _accept(await _readDesktopCode());
+    } on FormatException catch (error) {
+      _showFeedback(error.message);
+    } on PlatformException {
+      _showFeedback(
+        'Could not read the clipboard. Try copying the desktop code again.',
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Scan desktop pairing code')),
-    body: MobileScanner(
-      errorBuilder: (context, error) => const Center(
-        child: Text('Camera unavailable. Go back and paste the desktop code.'),
+    appBar: AppBar(
+      title: Text(
+        widget.purpose == PairPurpose.history
+            ? 'Scan history QR'
+            : 'Scan YouTube sign-in QR',
       ),
-      onDetect: (capture) {
-        if (found || !mounted) return;
-        for (final barcode in capture.barcodes) {
-          final code = barcode.rawValue;
-          if (code == null) continue;
-          try {
-            PairCode.decode(code, widget.purpose);
-          } on FormatException {
-            continue;
-          }
-          found = true;
-          Navigator.pop(context, code);
-          return;
-        }
-      },
+    ),
+    body: Column(
+      children: [
+        Expanded(
+          child: MobileScanner(
+            controller: scanner,
+            tapToFocus: true,
+            errorBuilder: (context, error) => const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'Camera unavailable. Allow camera access in Android settings or paste the code below.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+            onDetect: (capture) {
+              for (final barcode in capture.barcodes) {
+                final code = barcode.rawValue;
+                if (code != null && _accept(code)) return;
+              }
+            },
+          ),
+        ),
+        SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Column(
+            children: [
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  feedback ?? 'Fit the whole QR square in view. Tap the preview to focus.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              TextButton(onPressed: _paste, child: const Text('Paste code')),
+            ],
+          ),
+        ),
+      ],
     ),
   );
 }

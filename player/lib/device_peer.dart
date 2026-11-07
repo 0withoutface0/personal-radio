@@ -11,7 +11,13 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api.dart';
 import 'history_files.dart';
 
-enum PairPurpose { youtube, history }
+enum PairPurpose {
+  youtube('YouTube Music sign-in', 'Connect from Windows'),
+  history('listening history', 'Pair Wi-Fi history');
+
+  const PairPurpose(this.label, this.androidAction);
+  final String label, androidAction;
+}
 
 bool privateAddress(String value) {
   final bytes = InternetAddress.tryParse(value)?.rawAddress;
@@ -55,17 +61,25 @@ class PairCode {
       base64UrlEncode(utf8.encode(jsonEncode(toJson()))).replaceAll('=', '');
 
   factory PairCode.decode(String text, PairPurpose purpose) {
+    final PairCode code;
     try {
       text = text.trim();
       if (text.length > 512) throw const FormatException();
-      final code = PairCode.fromJson(
+      code = PairCode.fromJson(
         jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(text)))),
       );
-      if (code.purpose != purpose) throw const FormatException();
-      return code;
     } catch (_) {
-      throw const FormatException('Use a fresh desktop code for this action.');
+      throw const FormatException(
+        'Use a fresh pairing code from Personal Radio on Windows.',
+      );
     }
+    if (code.purpose != purpose) {
+      throw FormatException(
+        'This code is for ${code.purpose.label}. '
+        'Choose ${code.purpose.androidAction} on your phone.',
+      );
+    }
+    return code;
   }
 
   factory PairCode.fromJson(Map<String, dynamic> data) {

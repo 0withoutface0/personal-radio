@@ -1,7 +1,7 @@
 name: personal_radio
 description: "Personal lossless radio for Windows and Android."
 publish_to: 'none'
-version: 0.6.2+15
+version: 0.6.3+16
 
 environment:
   sdk: ^3.13.7
