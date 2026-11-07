@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from threading import RLock
 from uuid import uuid4
 
 import pytest
@@ -200,3 +201,31 @@ def test_listening_event_timestamp_migration_preserves_existing_rows(store):
     assert reopened.get_occurrence(occurrence)["listened"] == 3
     with reopened.connect() as db:
         assert db.execute("SELECT played_at FROM events").fetchone()[0] is None
+
+
+def test_standalone_holds_pending_play_until_original_account_returns(store):
+    class SignedIn(FakeYouTube):
+        lock = RLock()
+        channel = "different-channel"
+
+        def identity(self, provider):
+            assert provider == "youtube"
+            return self.channel
+
+    provider = SignedIn()
+    track = store.occurrence(
+        {"id": 1, "title": "Fixture", "artists": ["Test"], "duration": 180},
+        "youtube-song",
+        accounts={"youtube": "original-channel", "tidal": "tidal-fixture"},
+    )
+    add_time(store, track, 30)
+    reporter = Reporter(store, provider, bound_accounts=True)
+    reporter.flush()
+    assert provider.writes == 0
+    assert store.submissions()[0]["state"] == "pending"
+
+    provider.channel = "original-channel"
+    reporter.flush()
+    reporter.flush()
+    assert provider.writes == 1
+    assert store.submissions()[0]["state"] == "visible"
