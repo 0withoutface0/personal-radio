@@ -20,6 +20,11 @@ class MainActivity : AudioServiceActivity() {
         super.onCreate(savedInstanceState)
     }
 
+    override fun onResume() {
+        super.onResume()
+        PlaybackWidget.attach(applicationContext, mediaController)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         collectRedirect(intent)
@@ -38,6 +43,16 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
+        val context = applicationContext
+        MethodChannel(engine.dartExecutor.binaryMessenger, "dev.personalradio/playback_widget")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "setOccurrence") {
+                    PlaybackWidget.setOccurrence(context, mediaController, call.arguments as? String)
+                    result.success(null)
+                } else {
+                    result.notImplemented()
+                }
+            }
         MethodChannel(engine.dartExecutor.binaryMessenger, "dev.personalradio/local_engine")
             .setMethodCallHandler { call, result ->
                 when (call.method) {

@@ -1666,6 +1666,15 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
   static const likeAction = 'personal_radio.like';
   RadioController radio;
   bool _stopped = true;
+  String? _publishedOccurrence;
+  ValueChanged<String?>? _onOccurrenceChanged;
+
+  void observeOccurrence(ValueChanged<String?> listener) {
+    _onOccurrenceChanged = listener;
+    _publishedOccurrence = radio.current?.occurrenceId;
+    listener(_publishedOccurrence);
+  }
+
   RadioAudioHandler(this.radio) {
     ratingStyle.add(RatingStyle.heart);
     radio.transportChanged = publish;
@@ -1683,6 +1692,11 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
   void publish() {
     if (radio.playing) _stopped = false;
     final current = radio.current;
+    final occurrence = current?.occurrenceId;
+    if (occurrence != _publishedOccurrence) {
+      _publishedOccurrence = occurrence;
+      _onOccurrenceChanged?.call(occurrence);
+    }
     final liked = radio.currentRating?.value == 'LIKE';
     if (current != null &&
         (mediaItem.value?.id != current.occurrenceId ||
@@ -1726,6 +1740,7 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
           MediaControl.stop,
         ],
         systemActions: const {
+          MediaAction.skipToPrevious,
           MediaAction.seek,
           MediaAction.seekForward,
           MediaAction.seekBackward,
@@ -1787,6 +1802,20 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> seek(Duration position) => radio.seek(position);
   @override
   Future<void> skipToNext() => radio.advance();
+  @override
+  Future<void> skipToPrevious() async {
+    if (!radio.ready || radio.current == null || radio.changingQueue) return;
+    if (radio.position < const Duration(seconds: 3)) {
+      for (var i = radio.currentIndex - 1; i >= 0; i--) {
+        if (radio.entries[i].tidal != null) {
+          await radio.selectEntry(i);
+          return;
+        }
+      }
+    }
+    await radio.seek(Duration.zero);
+  }
+
   @override
   Future<void> stop() async {
     _stopped = true;

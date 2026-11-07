@@ -10,6 +10,8 @@ Browsing uses your YouTube Music catalog. Song actions include **View artist** a
 
 ## Run
 
+On Android, long-press an empty area on the home screen and open **Widgets → Personal Radio** to add the 2×2 widget. Tap the artwork or song title to open the app. While a track is loaded, the widget shows its artwork and offers Previous, Play/Pause and Next. Previous restarts the current track after the first three seconds.
+
 Open the gear button, then **Appearance**, to choose **System / Material You**, **Original green**, Ocean, Violet, Rose or Amber. System colors and system light/dark mode are the defaults when no appearance is saved. Android 12+ uses the wallpaper's Monet palette; Windows uses its accent color. Green is the fallback when dynamic colors are unavailable. You can independently force Light or Dark; Original green in Dark mode retains the previous palette. Changes are saved on this device without changing the queue, accounts or listening outbox. System colors are refreshed when returning to the app.
 
 Right-click a song in search results, artist pages, album tracks, Queue, now playing or the bottom player bar to open its song options at the pointer. Touch users can long-press. The menu offers Play next, Add to queue, Autoplay, Start radio / mix, and the artist/album links supplied with that song. Opening or dismissing the menu leaves playback and the queue untouched. The existing overflow buttons use the same actions.

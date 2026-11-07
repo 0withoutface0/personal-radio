@@ -40,6 +40,16 @@ Future<void> main() async {
         androidNotificationIcon: 'drawable/ic_radio_notification',
       ),
     );
+    const widget = MethodChannel('dev.personalradio/playback_widget');
+    handler.observeOccurrence((id) async {
+      try {
+        await widget.invokeMethod<void>('setOccurrence', id);
+      } on MissingPluginException {
+        // A headless engine can start without a widget host activity.
+      } on PlatformException {
+        // The widget is optional and does not control playback initialization.
+      }
+    });
   }
   AppLifecycleListener(
     onStateChange: (state) =>
