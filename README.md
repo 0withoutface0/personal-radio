@@ -4,6 +4,8 @@ YouTube Music recommendations, played through matching lossless recordings from 
 
 The player follows your system colors and light/dark appearance by default, including Android Material You/Monet. Choose **Settings > Appearance** for Original green, Ocean, Violet, Rose or Amber. It also prepares the next lossless queue track before the current one ends, and Android media controls include a Like action for both services.
 
+The **Listening** tab charts actual playback by day, week, month, year or all time. Browse past periods, tap the chart to inspect a bucket, and rank songs by time, repeat plays or likes made in the app. The dashboard uses your existing local server history.
+
 Use your own YouTube Music and Tidal subscriptions. Provider credentials stay on your server; the players connect with a separate device token. This project uses unofficial integrations and is not affiliated with either service.
 
 ## What it does

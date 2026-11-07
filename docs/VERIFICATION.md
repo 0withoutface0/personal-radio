@@ -1,11 +1,12 @@
 # Verification status
 
-Version 0.4.0 is an early release. The Windows executable, signed Android APK and Linux Docker image are distributed separately from private account state. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
+Version 0.5.0 is an early release. The Windows executable, signed Android APK and Linux Docker image are distributed separately from private account state. Physical Android acceptance checks and continuous full Hi-Res playback on each device remain open. Recap inclusion is unverified.
 
-Automated checks: **153 Python tests** (server API 0.4.1), **104 Flutter unit/widget tests** (v0.4.0 player), clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
+Automated checks: **155 Python tests** (server API 0.5.0), **109 Flutter unit/widget tests** (v0.5.0 player), clean Ruff checks and clean Flutter analysis. Tests use temporary state and provider fixtures. Decoder tests generate their own audio; they do not certify account access or audible device playback.
 
 | Check | Evidence / status |
 | --- | --- |
+| Listening dashboard | Protected date-range API, legacy database migration, daylight saving boundaries, deduplication, delayed offline events and favorite ranks checked. Phone and Windows widget layouts cover chart taps, date navigation and out-of-order responses. |
 | Material You / themes | Defaults, OS brightness, resume refresh, preset persistence and phone/Windows layouts pass widget tests; Android 16 native Monet palette and Original green selection verified with the real dynamic-color plugin |
 | Android media Like | Native foreground service active and MediaSession exposes Remove like after the fixture Like; actual dual-service requests mocked. Unit tests verify clear, offline persistence and stale/duplicate delivery. Physical OEM action visibility remains an acceptance check |
 | Prepared next-track handoff | Native Windows generated PCM and 24-bit/96kHz FLAC HLS tests fetch authenticated next audio before EOF, advance through the native playlist without another stream resolution, and preserve occurrence registration order. The same PCM and Hi-Res HLS checks pass on the Android 16 emulator |

@@ -48,6 +48,14 @@ Alternatively, to bind directly to the Tailscale interface, stop the existing lo
 
 Use the actual numeric `100.x.x.x` address from Tailscale. This disables account setup on that listener, binds only to that address, and permits its Host header. Authenticate/reconnect accounts through loopback setup before switching listeners. Any firewall rule must be restricted to the Tailscale interface/network. The launcher defaults to a local server; when using a Tailscale listener, open the executable directly and change Connection settings.
 
+## Listening dashboard
+
+Open **Listening** and select **Day**, **Week**, **Month**, **Year**, or **All time**. Use the arrows or date picker to browse past periods. Weeks start on Monday. Tap a bar for details and swipe across dense charts. Top songs can be ranked by time or plays, and the **Liked** filter shows songs you liked in Personal Radio and heard in the selected period. Top artists group the stored artist credits.
+
+The dashboard counts actual saved listening time. A play is an occurrence with positive listening in that period. Events awaiting sync appear in the activity panel and enter the charts after the server receives them. Tap Refresh or pull down to update the displayed data.
+
+Update the server to API **0.5.0** for date ranges and charts. The server adds playback timestamps automatically and keeps the existing history. Older events use their server receipt dates, while newly recorded offline events keep the device playback time.
+
 ## Playback and saved state
 
 The player uses media_kit/libmpv with authenticated FLAC URLs and no server audio conversion. The source is requested at Hi-Res lossless first, then standard lossless. The quality badge shows actual bit depth/sample rate only when the server's ffprobe check succeeds. Hardware bit-perfect output is not asserted.

@@ -1,6 +1,6 @@
 # Early release acceptance
 
-Delivered implementation (v0.4.0): one Flutter codebase for Windows and Android; personalized Speed dial and Quick picks; song/artist/album catalog browsing, finite direct playback queues, Add to queue and Play next; separate Autoplay, explicit radio and personalized-station modes; lossless media_kit playback; Android audio_service/audio_session integration; durable queue/outbox state; server-side matching/corrections, source-quality verification, device leases and best-effort activity reporting. Release binaries and SHA-256 checksums are under `dist/`. Setup and reproducible build commands are in `player/README.md`.
+Delivered implementation (v0.5.0): one Flutter codebase for Windows and Android; personalized Speed dial and Quick picks; song/artist/album catalog browsing, finite direct playback queues, Add to queue and Play next; separate Autoplay, explicit radio and personalized-station modes; lossless media_kit playback; Android audio_service/audio_session integration; durable queue/outbox state; server-side matching/corrections, source-quality verification, device leases and best-effort activity reporting. Release binaries and SHA-256 checksums are under `dist/`. Setup and reproducible build commands are in `player/README.md`.
 
 Remaining acceptance work:
 
@@ -29,3 +29,6 @@ Version 0.4.0 adds system-derived Material You/Monet colors (default), five sele
 The final 90 seconds of a track prepare the next confident lossless stream in the native playlist. Its authenticated audio is fetched before EOF, without registering a speculative play. Actual advancement durably queues the next occurrence registration ahead of events/ratings, preserves station context, and completes the previous occurrence once. Queue edits and seeks discard stale preparation. Compatible formats keep the audio device open; format changes or insufficient network buffering can still create a gap. Native buffering stays in RAM and no audio conversion was added.
 
 Android notification/lock-screen media controls now include Like and Remove like, using the same durable dual-service action as the app. Action payloads include the occurrence and desired state to ignore old or duplicate delivery. Layout and visibility remain controlled by Android/OEM media UI. Install the APK over the existing app to preserve its queue and pending activity; the signing key is unchanged. No server data migration is needed from API 0.4.1.
+
+
+Version 0.5.0 adds the Listening dashboard with daily, weekly, monthly, yearly and all-time statistics, calendar navigation, interactive activity bars, repeat plays, and top song and artist rankings. Liked songs use choices recorded in Personal Radio. Update the server to API 0.5.0 before the app. The server migrates existing SQLite history in place. Older intervals use their receipt times. New device events keep the playback date across offline sync.
