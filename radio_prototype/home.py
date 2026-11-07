@@ -56,11 +56,17 @@ class HomeFeed:
         self.providers = providers
         self.cached = None
         self.cached_at = 0
-        self.identity = None
+        self._session = None
         self.targets = OrderedDict()
 
-    def _identity(self, youtube):
-        return id(youtube), self.providers.settings.youtube_file.stat().st_mtime_ns
+    def _active_session(self):
+        # The provider replaces its client when credentials change in either mode.
+        youtube = self.providers.yt()
+        if youtube is not self._session:
+            self.targets.clear()
+            self.cached = None
+            self._session = youtube
+        return youtube
 
     def _target(self, endpoint, mode, title):
         if not endpoint:
@@ -73,8 +79,7 @@ class HomeFeed:
 
     def playback(self, selection_id):
         with self.providers.lock:
-            if self.identity != self._identity(self.providers.yt()):
-                self.targets.clear()
+            self._active_session()
             target = self.targets.get(selection_id)
             if not target or target[0] < time.monotonic():
                 raise ProviderUnavailable(
@@ -143,12 +148,7 @@ class HomeFeed:
 
     def snapshot(self, *, refresh=False):
         with self.providers.lock:
-            youtube = self.providers.yt()
-            identity = self._identity(youtube)
-            if identity != self.identity:
-                self.targets.clear()
-                self.cached = None
-                self.identity = identity
+            youtube = self._active_session()
             if self.cached and not refresh and time.monotonic() - self.cached_at < 300:
                 return deepcopy(self.cached)
             # get_home also returns generic shelves when browser auth expires.

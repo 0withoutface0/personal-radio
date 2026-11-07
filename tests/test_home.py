@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from radio_prototype.api import create_app
 from radio_prototype.config import Settings
+from radio_prototype.local_accounts import LocalProviders
 from radio_prototype.providers import Providers
 
 
@@ -94,11 +95,19 @@ def page(rows, continuation=None):
     }
 
 
-@pytest.fixture
-def home_api(tmp_path):
+@pytest.fixture(params=["server", "embedded"])
+def home_api(tmp_path, request):
     settings = Settings(tmp_path)
-    settings.youtube_file.write_text("{}", encoding="utf-8")
-    providers = Providers(settings)
+    embedded = request.param == "embedded"
+    if embedded:
+        accounts = {"youtube": {"auth": {}, "identity": None}, "tidal": None}
+        vault = SimpleNamespace(read=lambda name: accounts if name == "accounts" else None)
+        providers = LocalProviders(settings, vault)
+        token = "embedded-test"
+    else:
+        settings.youtube_file.write_text("{}", encoding="utf-8")
+        providers = Providers(settings)
+        token = settings.device_token()
     calls = []
     state = {
         "account": {"accountName": "Offline fixture"},
@@ -132,9 +141,9 @@ def home_api(tmp_path):
     providers.youtube = SimpleNamespace(
         get_account_info=lambda: state["account"], _send_request=request
     )
-    app = create_app(settings, providers)
-    with TestClient(app, base_url="http://localhost") as client:
-        yield client, app, {"Authorization": "Bearer " + settings.device_token()}, calls, state
+    app = create_app(settings, providers, embedded=embedded, runtime_token=token)
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        yield client, app, {"Authorization": "Bearer " + token}, calls, state
 
 
 def test_personal_shelves_preserve_order_types_and_hide_provider_commands(home_api):
@@ -202,7 +211,7 @@ def test_missing_shelves_and_signed_out_feeds_are_explicit(home_api):
 
 
 def test_expired_and_cross_account_targets_cannot_be_replayed(home_api):
-    client, app, auth, _, _ = home_api
+    client, app, auth, _, state = home_api
     data = client.get("/api/home", headers=auth).json()
     key = data["quick_picks"]["play_all_id"]
     entry = app.state.home.targets[key]
@@ -210,11 +219,15 @@ def test_expired_and_cross_account_targets_cannot_be_replayed(home_api):
     assert (
         client.post("/api/home/play", headers=auth, json={"selection_id": key}).status_code == 503
     )
-    app.state.home.identity = None
+    providers = app.state.home.providers
+    providers.youtube = SimpleNamespace(**vars(providers.youtube))
     key = data["speed_dial"]["items"][0]["play_id"]
     assert (
         client.post("/api/home/play", headers=auth, json={"selection_id": key}).status_code == 503
     )
+    state["home"] = page([shelf("Listen again", [song("new-session")])])
+    refreshed = client.get("/api/home", headers=auth).json()
+    assert refreshed["speed_dial"]["items"][0]["song"]["video_id"] == "new-session"
 
 
 @pytest.mark.parametrize(
