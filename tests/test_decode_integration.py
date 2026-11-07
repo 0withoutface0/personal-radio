@@ -92,7 +92,7 @@ def audio(tmp_path_factory):
 
 
 @pytest.fixture
-def service(tmp_path, audio, monkeypatch):
+def service(tmp_path, audio, monkeypatch, request):
     root, media_origin = audio
     upstream_get = requests.get
     observed_headers = []
@@ -152,7 +152,13 @@ def service(tmp_path, audio, monkeypatch):
             "duration": 3,
         },
     )
-    app = create_app(settings, provider)
+    embedded = getattr(request, "param", False)
+    app = create_app(
+        settings,
+        provider,
+        runtime_token=settings.device_token() if embedded else None,
+        embedded=embedded,
+    )
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
@@ -171,6 +177,7 @@ def service(tmp_path, audio, monkeypatch):
     listener.close()
 
 
+@pytest.mark.parametrize("service", [False, True], indirect=True)
 @pytest.mark.parametrize("track_id,hires", [(1, False), (2, True), (4, True)])
 def test_real_ffmpeg_decodes_entire_authenticated_fixture(service, track_id, hires):
     app, settings, origin, _, _ = service
