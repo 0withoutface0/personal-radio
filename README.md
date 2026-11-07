@@ -27,9 +27,9 @@ Autoplay and Start radio use different request paths. Independently created sess
 
 ## Downloads and status
 
-[Download the published Windows ZIP or Android APK](https://github.com/0withoutface0/personal-radio/releases). Published builds currently use the separately configured server.
+The [0.7.1 standalone prerelease](https://github.com/0withoutface0/personal-radio/releases/tag/v0.7.1) includes a Windows x64 installer and portable ZIP, plus a signed 64-bit Android APK. The [0.5.0 release](https://github.com/0withoutface0/personal-radio/releases/tag/v0.5.0) uses a separately configured server.
 
-The standalone implementation in this source tree runs the engine inside the app on Windows x64 and 64-bit Android. New installations use **On this device** by default. Upgrades retain their existing server profile. See the [standalone setup guide](player/STANDALONE.md) for setup, history sharing, build instructions and release verification status.
+Standalone mode runs the engine inside the app on Windows x64 and 64-bit Android. New installations use **On this device** by default. Upgrades retain their existing server profile. See the [standalone setup guide](player/STANDALONE.md) for setup, history sharing, build instructions and release verification status.
 
 Windows playback, full standard FLAC playback, full 24-bit source decoding, queue pagination and Docker restart persistence have been checked. Physical Android screen-off/headset/interruption behavior, continuous full Hi-Res playback on both devices, and prolonged network recovery still need acceptance testing. **YouTube Recap inclusion is unverified**, independently of successful history submission.
 
