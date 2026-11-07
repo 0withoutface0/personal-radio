@@ -206,6 +206,10 @@ def create_app(settings=None, providers=None, *, runtime_token=None, embedded=Fa
 
     protected = [Depends(authorize)]
     dispatch_lock = threading.Lock()
+    if embedded:
+        from .history_transfer import history_routes
+
+        app.include_router(history_routes(store, authorize))
     if local_accounts:
         from .local_api import account_routes
 
