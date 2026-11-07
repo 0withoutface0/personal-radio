@@ -4,6 +4,7 @@ import functools
 import json
 import re
 import time
+from contextlib import suppress
 from urllib.parse import parse_qs, urlsplit
 
 import requests
@@ -12,6 +13,7 @@ from ytmusicapi.exceptions import YTMusicError
 
 from .providers import Providers, ProviderUnavailable
 
+ACCOUNT_NAMES = ('youtube', 'tidal')
 YOUTUBE_HEADERS = ("authorization", "cookie", "x-goog-authuser", "x-goog-pageid")
 
 
@@ -74,7 +76,9 @@ class LocalProviders(Providers):
     def __init__(self, settings, vault):
         super().__init__(settings)
         self.vault = vault
-        self.records = {name: vault.read(name) for name in ("youtube", "tidal")}
+        self.records = vault.read("accounts")
+        if self.records is None:
+            self.records = {name: vault.read(name) for name in ACCOUNT_NAMES}
         self.pkce_until = 0
 
     def status(self):
@@ -93,9 +97,16 @@ class LocalProviders(Providers):
             record = self.records[provider]
             return record.get("identity") if record else None
 
+    def _save_accounts(self, records):
+        # Commit both records together. Older installations used one file per provider.
+        self.vault.write("accounts", records)
+        self.records = records
+        for name in ACCOUNT_NAMES:
+            with suppress(OSError):
+                self.vault.delete(name)
+
     def _save(self, provider, record):
-        self.vault.write(provider, record)
-        self.records[provider] = record
+        self._save_accounts(self.records | {provider: record})
 
     def yt(self):
         with self.lock:
@@ -106,43 +117,71 @@ class LocalProviders(Providers):
                 self.youtube = youtube_client(record["auth"])
             return self.youtube
 
+    @staticmethod
+    def _verified_youtube(headers):
+        try:
+            auth = browser_auth(headers)
+        except (ValueError, YTMusicError):
+            raise ProviderUnavailable(
+                "Could not read the copied headers. Copy the full Request Headers from a "
+                "signed-in YouTube Music browse request, including Cookie and Authorization."
+            ) from None
+        try:
+            client = youtube_client(auth)
+            info = client.get_account_info()
+        except FileNotFoundError:
+            raise ProviderUnavailable(
+                "This installation is missing YouTube Music support files. "
+                "Update Personal Radio and try again."
+            ) from None
+        except (requests.ConnectionError, requests.Timeout):
+            raise ProviderUnavailable(
+                "Could not reach YouTube Music. Check this device's connection and try again."
+            ) from None
+        except Exception:
+            raise ProviderUnavailable(
+                "YouTube Music could not verify the session. Sign in at music.youtube.com "
+                "and copy fresh headers from a browse request."
+            ) from None
+        handle = info.get("channelHandle")
+        label = handle or info.get("accountName") or "YouTube Music"
+        return {
+            "auth": auth,
+            "label": label,
+            "identity": youtube_identity(client, handle),
+        }, client
+
     def connect_youtube(self, headers):
         with self.lock:
+            record, client = self._verified_youtube(headers)
+            self._save("youtube", record)
+            self.youtube = client
+
+    def setup_transfer(self):
+        with self.lock:
+            youtube = self.records["youtube"]
+            tidal = self._tidal_record(self.tidal) if self.tidal else self.records["tidal"]
+            if not youtube or not tidal or not tidal["auth"]["refresh_token"]:
+                raise ProviderUnavailable("Connect both music accounts on Windows first.")
+            return {"youtube": youtube["auth"], "tidal": tidal["auth"]}
+
+    def import_setup(self, youtube_auth, tidal_auth):
+        with self.lock:
+            youtube, client = self._verified_youtube(json.dumps(youtube_auth))
             try:
-                auth = browser_auth(headers)
-            except (ValueError, YTMusicError):
-                raise ProviderUnavailable(
-                    "Could not read the copied headers. Copy the full Request Headers from a "
-                    "signed-in YouTube Music browse request, including Cookie and Authorization."
-                ) from None
-            try:
-                client = youtube_client(auth)
-                info = client.get_account_info()
-            except FileNotFoundError:
-                raise ProviderUnavailable(
-                    "This installation is missing YouTube Music support files. "
-                    "Update Personal Radio and try again."
-                ) from None
-            except (requests.ConnectionError, requests.Timeout):
-                raise ProviderUnavailable(
-                    "Could not reach YouTube Music. Check this device's connection and try again."
-                ) from None
+                tidal = self.new_tidal()
+                if not tidal.load_oauth_session(**tidal_auth) or not tidal.check_login():
+                    raise ValueError("Unverified Tidal session")
+                tidal_record = self._tidal_record(tidal)
             except Exception:
                 raise ProviderUnavailable(
-                    "YouTube Music could not verify the session. Sign in at music.youtube.com "
-                    "and copy fresh headers from a browse request."
+                    "Tidal could not verify the desktop session. Reconnect Tidal on Windows "
+                    "and make a new setup code."
                 ) from None
-            handle = info.get("channelHandle")
-            label = handle or info.get("accountName") or "YouTube Music"
-            self._save(
-                "youtube",
-                {
-                    "auth": auth,
-                    "label": label,
-                    "identity": youtube_identity(client, handle),
-                },
-            )
+            self._save_accounts({"youtube": youtube, "tidal": tidal_record})
             self.youtube = client
+            self.tidal = tidal
+            self.cancel_pkce()
 
     def youtube_transfer(self):
         with self.lock:
@@ -164,24 +203,20 @@ class LocalProviders(Providers):
                 self.tidal = session
             return self.tidal
 
-    def _save_tidal(self, session):
+    @staticmethod
+    def _tidal_record(session):
         identity = str(session.user.id)
-        self._save(
-            "tidal",
-            {
-                "label": "Tidal account " + identity,
-                "identity": identity,
-                "auth": {
-                    key: getattr(session, key)
-                    for key in (
-                        "token_type",
-                        "access_token",
-                        "refresh_token",
-                        "is_pkce",
-                    )
-                },
+        return {
+            "label": "Tidal account " + identity,
+            "identity": identity,
+            "auth": {
+                key: getattr(session, key)
+                for key in ("token_type", "access_token", "refresh_token", "is_pkce")
             },
-        )
+        }
+
+    def _save_tidal(self, session):
+        self._save("tidal", self._tidal_record(session))
 
     def start_pkce(self):
         with self.lock:
@@ -221,8 +256,7 @@ class LocalProviders(Providers):
 
     def disconnect(self, provider):
         with self.lock:
-            self.vault.delete(provider)
-            self.records[provider] = None
+            self._save(provider, None)
             if provider == "youtube":
                 self.youtube = None
             else:

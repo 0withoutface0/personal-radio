@@ -1,5 +1,6 @@
 import json
 import os
+from types import SimpleNamespace
 
 import pytest
 import requests
@@ -23,7 +24,7 @@ class MemoryVault:
         self.records[key] = value
 
     def delete(self, key):
-        self.records.pop(key)
+        self.records.pop(key, None)
 
 
 class FakeYouTube:
@@ -79,14 +80,14 @@ def test_browser_connect_requires_one_time_approval_and_redacts_invalid_input(
         )
         assert client.post(path, headers=browser, json=body).json() == {"connected": True}
         assert client.post(path, headers=browser, json=body).status_code == 401
-        assert "ignored" not in vault.records["youtube"]["auth"]
+        assert "ignored" not in vault.records["accounts"]["youtube"]["auth"]
         assert providers.identity("youtube") == "UC" + "a" * 22
         response = client.post(
             "/api/local/accounts/youtube", headers=auth, json={"text": ["secret"]}
         )
         assert response.status_code == 422 and "secret" not in response.text
         assert client.delete("/api/local/accounts/youtube", headers=auth).status_code == 200
-        assert vault.records == {}
+        assert vault.records == {"accounts": {"youtube": None, "tidal": None}}
 
 
 @pytest.mark.parametrize(
@@ -166,6 +167,49 @@ def test_pasted_headers_connect_through_the_real_youtube_client(tmp_path, monkey
         assert valid.json() == {"credential_file": True, "label": "@fixture", "reporting": True}
         assert providers.identity("youtube") == channel
         assert visited == list(replies)
+
+
+def test_setup_transfers_both_accounts_only_after_validation(tmp_path, monkeypatch):
+    settings = Settings(tmp_path, local_setup=False)
+    vault = MemoryVault()
+    previous_youtube = {"auth": {"cookie": "existing"}, "identity": "existing"}
+    vault.write("youtube", previous_youtube)
+    providers = LocalProviders(settings, vault)
+    monkeypatch.setattr("radio_prototype.local_accounts.youtube_client", lambda _: FakeYouTube())
+    tidal_auth = {
+        "token_type": "Bearer", "access_token": "fixture-access",
+        "refresh_token": "fixture-refresh", "is_pkce": True,
+    }
+    tidal = SimpleNamespace(
+        **tidal_auth, user=SimpleNamespace(id=123),
+        load_oauth_session=lambda **auth: auth == tidal_auth,
+        check_login=lambda: False,
+    )
+    monkeypatch.setattr(providers, "new_tidal", lambda: tidal)
+    app = create_app(settings, providers, runtime_token="device-test", embedded=True)
+    setup = "/api/local/accounts/setup"
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        auth = {"Authorization": "Bearer device-test"}
+        assert client.post(setup + "/transfer").status_code == 401
+        assert client.post(setup + "/transfer", headers=auth).status_code == 503
+        body = {
+            "youtube": {"cookie": "fixture", "authorization": "fixture"},
+            "tidal": tidal_auth,
+        }
+        failed = client.post(setup, json=body, headers=auth)
+        assert failed.status_code == 503 and "fixture-refresh" not in failed.text
+        assert vault.records == {"youtube": previous_youtube}
+        tidal.check_login = lambda: True
+        result = client.post(setup, json=body, headers=auth)
+        assert result.status_code == 200
+        assert all(result.json()[name]["credential_file"] for name in ("youtube", "tidal"))
+        assert "fixture-refresh" not in result.text
+        assert set(vault.records) == {"accounts"}
+        restored = LocalProviders(settings, vault)
+        assert restored.identity("tidal") == "123"
+        transferred = client.post(setup + "/transfer", headers=auth)
+        assert transferred.headers["cache-control"] == "no-store"
+        assert transferred.json()["tidal"] == tidal_auth
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows DPAPI")

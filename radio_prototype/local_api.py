@@ -14,6 +14,18 @@ class SetupText(BaseModel):
     text: str = Field(min_length=1, max_length=200_000)
 
 
+class SetupTidal(BaseModel):
+    token_type: Literal["Bearer", "bearer"]
+    access_token: str = Field(min_length=1, max_length=16_384)
+    refresh_token: str = Field(min_length=1, max_length=16_384)
+    is_pkce: Literal[True]
+
+
+class SetupAccounts(BaseModel):
+    youtube: dict[str, str] = Field(min_length=2, max_length=8)
+    tidal: SetupTidal
+
+
 def account_routes(providers, authorize):
     protected = [Depends(authorize)]
     router = APIRouter()
@@ -28,6 +40,16 @@ def account_routes(providers, authorize):
     @router.post("/api/local/accounts/youtube/transfer", dependencies=protected)
     def transfer():
         return providers.youtube_transfer()
+
+    @router.post("/api/local/accounts/setup/transfer", dependencies=protected)
+    def setup_transfer(response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        return providers.setup_transfer()
+
+    @router.post("/api/local/accounts/setup", dependencies=protected)
+    def import_setup(body: SetupAccounts):
+        providers.import_setup(body.youtube, body.tidal.model_dump())
+        return providers.status()
 
     @router.post("/api/local/accounts/tidal/start", dependencies=protected)
     def tidal_start():
