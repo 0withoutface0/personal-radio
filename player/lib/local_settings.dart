@@ -460,7 +460,7 @@ class _LocalSettingsState extends State<_LocalSettings>
         actions: [
           TextButton(
             onPressed: available
-                ? () => run(host.radio.refreshLocalAccounts)
+                ? () => run(host.radio.checkLocalAccounts)
                 : null,
             child: const Text('Check accounts'),
           ),

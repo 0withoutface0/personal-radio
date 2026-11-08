@@ -349,10 +349,34 @@ class RadioController extends ChangeNotifier {
       unawaited(loadHome());
     }
     unawaited(refreshReport());
+    if (localMode &&
+        accountLinked('youtube') &&
+        localAccounts?['youtube']?['reporting'] == false) {
+      // Existing standalone profiles may have credentials without a channel ID.
+      // Check once at connection time without delaying playback or Discover.
+      unawaited(
+        checkLocalAccounts(reloadHome: false).catchError((Object _) {}),
+      );
+    }
   }
 
   bool accountLinked(String provider) =>
       localAccounts?[provider]?['credential_file'] == true;
+
+  Future<void> checkLocalAccounts({bool reloadHome = true}) async {
+    if (!localMode || !ready) return;
+    final client = api!;
+    if (accountLinked('youtube')) {
+      await client.call(
+        '/api/local/accounts/youtube/check',
+        body: {},
+        timeout: const Duration(seconds: 50),
+      );
+    }
+    if (_disposed || !identical(api, client)) return;
+    await refreshLocalAccounts(reloadHome: reloadHome);
+    if (!_disposed && identical(api, client)) unawaited(sync());
+  }
 
   Future<void> refreshLocalAccounts({bool reloadHome = true}) async {
     if (!localMode || !ready) return;

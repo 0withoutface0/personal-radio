@@ -5,11 +5,12 @@ import json
 import re
 import time
 from contextlib import suppress
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 import requests
 from ytmusicapi import YTMusic
 from ytmusicapi.exceptions import YTMusicError
+from ytmusicapi.navigation import nav
 
 from .providers import Providers, ProviderUnavailable
 
@@ -53,23 +54,51 @@ def youtube_client(auth):
     return YTMusic(auth, requests_session=session)
 
 
-def youtube_identity(client, handle):
-    if not isinstance(handle, str) or not handle.startswith("@") or "/" in handle:
+def _channel_id(value):
+    return value if isinstance(value, str) and re.fullmatch(r"UC[A-Za-z0-9_-]{22}", value) else None
+
+
+def _resolve_music_handle(client, handle):
+    if not isinstance(handle, str) or not handle.startswith("@") or len(handle) < 2:
         return None
     try:
         result = client._send_request(
-            "navigation/resolve_url",
-            {
-                "url": "https://www.youtube.com/" + handle,
-            },
+            "navigation/resolve_url", {"url": "https://music.youtube.com/" + quote(handle, safe="@")}
         )
-        channel = result["endpoint"]["browseEndpoint"]["browseId"]
-        if re.fullmatch(r"UC[A-Za-z0-9_-]{22}", channel):
-            return channel
-    except Exception:
-        pass
-    # Unidentified accounts can play, but cannot receive unattended writes.
-    return None
+        return _channel_id(nav(result, ["endpoint", "browseEndpoint", "browseId"], True))
+    except (requests.RequestException, YTMusicError, ValueError):
+        return None
+
+
+def youtube_account(client):
+    # get_account_info only returns display fields. Read its authenticated menu
+    # once so that the active account's own channel link can supply the ID.
+    response = client._send_request("account/account_menu", {})
+    menu = nav(
+        response,
+        ["actions", 0, "openPopupAction", "popup", "multiPageMenuRenderer"],
+    )
+    header = nav(menu, ["header", "activeAccountHeaderRenderer"])
+    name = nav(header, ["accountName", "runs", 0, "text"])
+    if not isinstance(name, str) or not name:
+        raise ValueError("Missing active YouTube account")
+    handle = nav(header, ["channelHandle", "runs", 0, "text"], True)
+    label = handle if isinstance(handle, str) and handle else name
+
+    channels = set()
+    for section in nav(menu, ["sections"], True) or []:
+        for item in nav(section, ["multiPageMenuSectionRenderer", "items"], True) or []:
+            link = nav(item, ["compactLinkRenderer"], True)
+            if nav(link, ["icon", "iconType"], True) != "ACCOUNT_BOX":
+                continue
+            channel = _channel_id(
+                nav(link, ["navigationEndpoint", "browseEndpoint", "browseId"], True)
+            )
+            if channel:
+                channels.add(channel)
+    if len(channels) > 1:
+        return label, None
+    return label, next(iter(channels), None) or _resolve_music_handle(client, handle)
 
 
 class LocalProviders(Providers):
@@ -126,9 +155,13 @@ class LocalProviders(Providers):
                 "Could not read the copied headers. Copy the full Request Headers from a "
                 "signed-in YouTube Music browse request, including Cookie and Authorization."
             ) from None
+        return LocalProviders._read_youtube(auth)
+
+    @staticmethod
+    def _read_youtube(auth, client=None):
         try:
-            client = youtube_client(auth)
-            info = client.get_account_info()
+            client = client if client is not None else youtube_client(auth)
+            label, identity = youtube_account(client)
         except FileNotFoundError:
             raise ProviderUnavailable(
                 "This installation is missing YouTube Music support files. "
@@ -143,13 +176,17 @@ class LocalProviders(Providers):
                 "YouTube Music could not verify the session. Sign in at music.youtube.com "
                 "and copy fresh headers from a browse request."
             ) from None
-        handle = info.get("channelHandle")
-        label = handle or info.get("accountName") or "YouTube Music"
-        return {
-            "auth": auth,
-            "label": label,
-            "identity": youtube_identity(client, handle),
-        }, client
+        return {"auth": auth, "label": label, "identity": identity}, client
+
+    def check_youtube(self):
+        with self.lock:
+            saved = self.records["youtube"]
+            if saved is not None:
+                record, client = self._read_youtube(saved["auth"], self.youtube)
+                if record != saved:
+                    self._save("youtube", record)
+                self.youtube = client
+            return self.status()["youtube"]
 
     def connect_youtube(self, headers):
         with self.lock:

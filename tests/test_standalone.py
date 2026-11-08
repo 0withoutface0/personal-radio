@@ -28,12 +28,35 @@ class MemoryVault:
 
 
 class FakeYouTube:
-    def get_account_info(self):
-        return {"channelHandle": "@fixture"}
+    channel = "UC" + "a" * 22
 
     def _send_request(self, endpoint, body):
-        assert endpoint == "navigation/resolve_url"
-        return {"endpoint": {"browseEndpoint": {"browseId": "UC" + "a" * 22}}}
+        assert endpoint == "account/account_menu"
+        assert body == {}
+        return youtube_menu(self.channel)
+
+
+def youtube_menu(channel=None, *, other_channel=None):
+    header = {
+        "accountName": {"runs": [{"text": "Fixture"}]},
+        "channelHandle": {"runs": [{"text": "@fixture"}]},
+    }
+    items = []
+    for icon, target in (("ACCOUNT_BOX", channel), ("WATCH_HISTORY", other_channel)):
+        if target:
+            items.append({
+                "compactLinkRenderer": {
+                    "icon": {"iconType": icon},
+                    "navigationEndpoint": {"browseEndpoint": {"browseId": target}},
+                }
+            })
+    menu = {
+        "header": {"activeAccountHeaderRenderer": header},
+        "sections": [{"multiPageMenuSectionRenderer": {"items": items}}],
+    }
+    return {"actions": [
+        {"openPopupAction": {"popup": {"multiPageMenuRenderer": menu}}}
+    ]}
 
 
 def test_engine_requires_ephemeral_token_and_keeps_database(tmp_path):
@@ -114,16 +137,10 @@ def test_pasted_headers_connect_through_the_real_youtube_client(tmp_path, monkey
 
     visited = []
     channel = "UC" + "a" * 22
-    account = {
-        "accountName": {"runs": [{"text": "Fixture"}]},
-        "channelHandle": {"runs": [{"text": "@fixture"}]},
-        "accountPhoto": {"thumbnails": [{"url": "https://example.invalid/photo"}]},
-    }
-    menu = {"multiPageMenuRenderer": {"header": {"activeAccountHeaderRenderer": account}}}
     replies = {
         "": b'ytcfg.set({"VISITOR_DATA":"fixture"});',
         "/youtubei/v1/account/account_menu": json.dumps(
-            {"actions": [{"openPopupAction": {"popup": menu}}]}
+            youtube_menu(other_channel="UC" + "b" * 22)
         ).encode(),
         "/youtubei/v1/navigation/resolve_url": json.dumps(
             {"endpoint": {"browseEndpoint": {"browseId": channel}}}
@@ -136,6 +153,8 @@ def test_pasted_headers_connect_through_the_real_youtube_client(tmp_path, monkey
         visited.append(target.path)
         if target.path:
             assert kwargs["headers"]["x-goog-authuser"] == "2"
+        if target.path.endswith("/resolve_url"):
+            assert kwargs["json"]["url"] == "https://music.youtube.com/@fixture"
         response = requests.Response()
         response.status_code = 200
         response._content = replies[target.path]
@@ -167,6 +186,26 @@ def test_pasted_headers_connect_through_the_real_youtube_client(tmp_path, monkey
         assert valid.json() == {"credential_file": True, "label": "@fixture", "reporting": True}
         assert providers.identity("youtube") == channel
         assert visited == list(replies)
+
+
+def test_account_check_recovers_saved_session_using_its_own_channel(tmp_path, monkeypatch):
+    settings = Settings(tmp_path, local_setup=False)
+    vault = MemoryVault()
+    auth = {"cookie": "fixture", "authorization": "fixture"}
+    vault.write("youtube", {"auth": auth, "label": "@fixture", "identity": None})
+    providers = LocalProviders(settings, vault)
+    monkeypatch.setattr("radio_prototype.local_accounts.youtube_client", lambda _: FakeYouTube())
+    app = create_app(settings, providers, runtime_token="device-test", embedded=True)
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        path = "/api/local/accounts/youtube/check"
+        headers = {"Authorization": "Bearer device-test"}
+        assert client.post(path).status_code == 401
+        assert client.get("/api/accounts", headers=headers).json()["youtube"]["reporting"] is False
+        response = client.post(path, headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"credential_file": True, "label": "@fixture", "reporting": True}
+        assert LocalProviders(settings, vault).identity("youtube") == FakeYouTube.channel
+        assert vault.records["accounts"]["youtube"]["auth"] == auth
 
 
 def test_setup_transfers_both_accounts_only_after_validation(tmp_path, monkeypatch):

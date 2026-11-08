@@ -37,6 +37,10 @@ def account_routes(providers, authorize):
         providers.connect_youtube(body.text)
         return providers.status()["youtube"]
 
+    @router.post("/api/local/accounts/youtube/check", dependencies=protected)
+    def check_youtube():
+        return providers.check_youtube()
+
     @router.post("/api/local/accounts/youtube/transfer", dependencies=protected)
     def transfer():
         return providers.youtube_transfer()
