@@ -96,4 +96,16 @@
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/widget_heart"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="4dp"
+        android:background="@drawable/widget_button"
+        android:contentDescription="@string/widget_like"
+        android:scaleType="center"
+        android:src="@drawable/ic_widget_heart" />
 </FrameLayout>

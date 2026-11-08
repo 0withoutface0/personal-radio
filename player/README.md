@@ -10,7 +10,7 @@ Browsing uses your YouTube Music catalog. Song actions include **View artist** a
 
 ## Run
 
-On Android, long-press an empty area on the home screen and open **Widgets → Personal Radio** to add the 2×2 widget. Tap the artwork or song title to open the app. While a track is loaded, the widget shows its artwork and offers Previous, Play/Pause and Next. Previous restarts the current track after the first three seconds.
+On Android, long-press an empty area on the home screen and open **Widgets → Personal Radio** to add the 2×2 widget. Tap the artwork or song title to open the app. While a track is loaded, the widget shows its artwork and offers Previous, Play/Pause and Next. Previous restarts the current track after the first three seconds. Tap the heart in the upper-right corner to like the song on YouTube Music and Tidal. The outline turns pink when liked. Tap it again to remove the like.
 
 Open the gear button, then **Appearance**, to choose **System / Material You**, **Original green**, Ocean, Violet, Rose or Amber. System colors and system light/dark mode are the defaults when no appearance is saved. Android 12+ uses the wallpaper's Monet palette; Windows uses its accent color. Green is the fallback when dynamic colors are unavailable. You can independently force Light or Dark; Original green in Dark mode retains the previous palette. Changes are saved on this device without changing the queue, accounts or listening outbox. System colors are refreshed when returning to the app.
 

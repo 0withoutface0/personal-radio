@@ -10,6 +10,8 @@ import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.PlaybackState
+import android.net.Uri
+import android.os.Bundle
 import android.view.View
 import android.widget.RemoteViews
 
@@ -31,6 +33,16 @@ class PlaybackWidget : AppWidgetProvider() {
             PAUSE -> controls.pause()
             PREVIOUS -> controls.skipToPrevious()
             NEXT -> controls.skipToNext()
+            HEART -> {
+                // The launcher can still hold an older widget view after
+                // playback advances or another control changes the rating.
+                val like = currentLike() ?: return
+                if (intent.data != like.uri) return
+                controls.sendCustomAction(LIKE_ACTION, Bundle().apply {
+                    putString("occurrence_id", like.occurrenceId)
+                    putString("value", like.value)
+                })
+            }
         }
     }
 
@@ -39,15 +51,26 @@ class PlaybackWidget : AppWidgetProvider() {
         private const val PAUSE = "dev.personalradio.widget.PAUSE"
         private const val PREVIOUS = "dev.personalradio.widget.PREVIOUS"
         private const val NEXT = "dev.personalradio.widget.NEXT"
-        private val actions = setOf(PLAY, PAUSE, PREVIOUS, NEXT)
+        private const val HEART = "dev.personalradio.widget.HEART"
+        private const val LIKE_ACTION = "personal_radio.like"
+        private val actions = setOf(PLAY, PAUSE, PREVIOUS, NEXT, HEART)
         private const val MAX_ART_SIZE = 384
 
         private var session: MediaController? = null
         private var callback: MediaController.Callback? = null
         private var occurrence: String? = null
         private var metadata: MediaMetadata? = null
-        private var playing = false
+        private var playback: PlaybackState? = null
         private var rendered: Display? = null
+
+        private data class LikeCommand(val occurrenceId: String, val value: String) {
+            val uri: Uri get() = Uri.Builder()
+                .scheme("personalradio-widget")
+                .authority("heart")
+                .appendPath(occurrenceId)
+                .appendPath(value)
+                .build()
+        }
 
         private data class Display(
             val active: Boolean,
@@ -55,6 +78,7 @@ class PlaybackWidget : AppWidgetProvider() {
             val artist: String?,
             val artwork: Bitmap?,
             val playing: Boolean,
+            val like: LikeCommand?,
         )
 
         fun setOccurrence(context: Context, controller: MediaController?, id: String?) {
@@ -69,7 +93,7 @@ class PlaybackWidget : AppWidgetProvider() {
                 callback?.let { session?.unregisterCallback(it) }
                 session = controller
                 metadata = controller.metadata
-                playing = isPlaying(controller.playbackState)
+                playback = controller.playbackState
                 callback = object : MediaController.Callback() {
                     override fun onMetadataChanged(value: MediaMetadata?) {
                         if (session !== controller) return
@@ -79,7 +103,7 @@ class PlaybackWidget : AppWidgetProvider() {
 
                     override fun onPlaybackStateChanged(state: PlaybackState?) {
                         if (session !== controller) return
-                        playing = isPlaying(state)
+                        playback = state
                         refresh(context)
                     }
 
@@ -89,7 +113,7 @@ class PlaybackWidget : AppWidgetProvider() {
                         session = null
                         callback = null
                         metadata = null
-                        playing = false
+                        playback = null
                         refresh(context)
                     }
                 }.also { controller.registerCallback(it) }
@@ -100,6 +124,17 @@ class PlaybackWidget : AppWidgetProvider() {
         private fun isPlaying(state: PlaybackState?): Boolean =
             state?.state == PlaybackState.STATE_PLAYING ||
                 (state?.state == PlaybackState.STATE_BUFFERING && state.playbackSpeed > 0)
+
+        private fun currentLike(): LikeCommand? {
+            val id = occurrence ?: return null
+            val extras = playback?.customActions?.firstOrNull { it.action == LIKE_ACTION }?.extras
+                ?: return null
+            val value = extras.getString("value") ?: return null
+            if (extras.getString("occurrence_id") != id || (value != "LIKE" && value != "INDIFFERENT")) {
+                return null
+            }
+            return LikeCommand(id, value)
+        }
 
         private fun display(): Display {
             // audio_service may publish the artwork later, or retain old
@@ -113,7 +148,8 @@ class PlaybackWidget : AppWidgetProvider() {
                 current?.getString(MediaMetadata.METADATA_KEY_TITLE),
                 current?.getString(MediaMetadata.METADATA_KEY_ARTIST),
                 current?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART),
-                active && playing,
+                active && isPlaying(playback),
+                if (active) currentLike() else null,
             )
         }
 
@@ -186,15 +222,29 @@ class PlaybackWidget : AppWidgetProvider() {
             views.setViewVisibility(R.id.widget_next, skipVisibility)
             views.setOnClickPendingIntent(R.id.widget_previous, command(context, PREVIOUS))
             views.setOnClickPendingIntent(R.id.widget_next, command(context, NEXT))
+            val like = current.like
+            views.setViewVisibility(R.id.widget_heart, if (like == null) View.GONE else View.VISIBLE)
+            if (like != null) {
+                val liked = like.value == "INDIFFERENT"
+                views.setImageViewResource(
+                    R.id.widget_heart,
+                    if (liked) R.drawable.ic_widget_heart_liked else R.drawable.ic_widget_heart,
+                )
+                views.setContentDescription(
+                    R.id.widget_heart,
+                    context.getString(if (liked) R.string.widget_unlike else R.string.widget_like),
+                )
+                views.setOnClickPendingIntent(R.id.widget_heart, command(context, HEART, like.uri))
+            }
             manager.updateAppWidget(ids, views)
             rendered = current
         }
 
-        private fun command(context: Context, action: String): PendingIntent =
+        private fun command(context: Context, action: String, data: Uri? = null): PendingIntent =
             PendingIntent.getBroadcast(
                 context,
                 0,
-                Intent(context, PlaybackWidget::class.java).setAction(action),
+                Intent(context, PlaybackWidget::class.java).setAction(action).setData(data),
                 PendingIntent.FLAG_IMMUTABLE,
             )
     }

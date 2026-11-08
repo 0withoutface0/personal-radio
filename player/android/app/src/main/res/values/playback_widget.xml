@@ -8,6 +8,8 @@
     <string name="widget_pause">Pause</string>
     <string name="widget_previous">Previous track</string>
     <string name="widget_next">Next track</string>
+    <string name="widget_like">Like on YouTube Music and Tidal</string>
+    <string name="widget_unlike">Remove like</string>
 
     <style name="WidgetPlaybackButton">
         <item name="android:layout_width">0dp</item>
