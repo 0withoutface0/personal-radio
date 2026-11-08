@@ -12,11 +12,19 @@ class Reporter:
         self.lock = threading.Lock()
         self.bound_accounts = bound_accounts
 
-    def _matches(self, row):
+    def _hold_reason(self, row):
         if not self.bound_accounts:
-            return True
-        identity = self.store.bound_account(row["occurrence_id"], row["provider"])
-        return bool(identity and identity == self.providers.identity(row["provider"]))
+            return None
+        provider = row["provider"]
+        identity = self.store.bound_account(row["occurrence_id"], provider)
+        if provider == "youtube" and identity is None:
+            return "Saved without a verified channel. Review held YouTube activity in Settings."
+        current = self.providers.identity(provider)
+        if not identity or not current:
+            return "Held for the original account; identity could not be verified."
+        if identity != current:
+            return "Held for a different account. Reconnect the original account."
+        return None
 
     def flush(self):
         # Explicit dispatch only during the prototype. Pending work survives restarts.
@@ -24,11 +32,12 @@ class Reporter:
             for row in self.store.submissions():
                 if row["state"] != "pending":
                     continue
-                if not self._matches(row):
+                held = self._hold_reason(row)
+                if held:
                     self.store.outcome(
                         row["id"],
                         "pending",
-                        "Held for the original account; identity could not be verified.",
+                        held,
                         expected_state="pending",
                     )
                     continue
@@ -97,7 +106,7 @@ class Reporter:
         ]
         history = None
         for row in rows:
-            if not self._matches(row):
+            if self._hold_reason(row):
                 continue
             try:
                 if row["provider"] == "tidal":

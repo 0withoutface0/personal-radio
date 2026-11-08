@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sqlite3
 import time
@@ -129,6 +130,64 @@ class Store:
                 (occurrence_id,),
             ).fetchone()
         return row[provider] if row else None
+
+    def youtube_recovery(self, channel, confirmation=None):
+        """Preview or explicitly bind pending YouTube reports with no saved channel."""
+        with self.connect() as db:
+            if confirmation is not None:
+                db.execute("BEGIN IMMEDIATE")
+            rows = db.execute(
+                """
+                SELECT s.id, s.occurrence_id, s.kind, o.video_id
+                FROM submissions s
+                JOIN occurrence_accounts a ON a.occurrence_id=s.occurrence_id
+                JOIN occurrences o ON o.id=s.occurrence_id
+                WHERE a.youtube IS NULL AND s.state='pending'
+                  AND (s.kind IN ('history', 'rating') OR s.kind LIKE 'rating:%')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM imported_occurrences i WHERE i.occurrence_id=o.id
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM submissions tried
+                      WHERE tried.occurrence_id=o.id
+                        AND tried.state IN ('sending', 'submitted', 'uncertain', 'visible')
+                        AND (tried.kind IN ('history', 'rating') OR tried.kind LIKE 'rating:%')
+                  )
+                ORDER BY s.id
+                """
+            ).fetchall()
+            snapshot = hashlib.sha256(
+                "\n".join([channel, *(row["id"] for row in rows)]).encode()
+            ).hexdigest()
+            if confirmation is None:
+                return {"count": len(rows), "confirmation": snapshot}
+            if confirmation != snapshot:
+                return None
+            db.executemany(
+                "UPDATE occurrence_accounts SET youtube=? WHERE occurrence_id=?",
+                [(channel, occurrence) for occurrence in {row["occurrence_id"] for row in rows}],
+            )
+            # The unassigned and verified queues used separate rating scopes.
+            # Once combined, only the newest explicit choice should be sent.
+            for video in {row["video_id"] for row in rows if row["kind"] != "history"}:
+                older = db.execute(
+                    """
+                    SELECT s.id FROM submissions s
+                    JOIN occurrences o ON o.id=s.occurrence_id
+                    JOIN occurrence_accounts a ON a.occurrence_id=o.id
+                    WHERE o.video_id=? AND a.youtube=? AND s.state!='superseded'
+                      AND (s.kind='rating' OR s.kind LIKE 'rating:%')
+                    ORDER BY s.created DESC, s.rowid DESC
+                    LIMIT -1 OFFSET 1
+                    """,
+                    (video, channel),
+                )
+                db.executemany(
+                    "UPDATE submissions SET state='superseded', detail=?, updated=? "
+                    "WHERE id=? AND state='pending'",
+                    [("Replaced by a newer explicit rating", now(), row["id"]) for row in older],
+                )
+            return {"reviewed": len(rows)}
 
     def get_occurrence(self, occurrence_id):
         with self.connect() as db:

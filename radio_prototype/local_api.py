@@ -26,7 +26,11 @@ class SetupAccounts(BaseModel):
     tidal: SetupTidal
 
 
-def account_routes(providers, authorize):
+class ConfirmYouTubeRecovery(BaseModel):
+    confirmation: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+def account_routes(providers, store, authorize):
     protected = [Depends(authorize)]
     router = APIRouter()
     pair = None
@@ -40,6 +44,29 @@ def account_routes(providers, authorize):
     @router.post("/api/local/accounts/youtube/check", dependencies=protected)
     def check_youtube():
         return providers.check_youtube()
+
+    def verified_channel():
+        channel = providers.identity("youtube")
+        if not channel:
+            raise HTTPException(409, "Check accounts to verify your YouTube Music channel first.")
+        return channel
+
+    @router.get("/api/local/accounts/youtube/recovery", dependencies=protected)
+    def preview_recovery():
+        with providers.lock:
+            return {
+                **store.youtube_recovery(verified_channel()),
+                "label": providers.status()["youtube"]["label"],
+            }
+
+    @router.post("/api/local/accounts/youtube/recovery", dependencies=protected)
+    def confirm_recovery(body: ConfirmYouTubeRecovery):
+        with providers.lock:
+            providers.check_youtube()
+            result = store.youtube_recovery(verified_channel(), body.confirmation)
+            if result is None:
+                raise HTTPException(409, "The channel or pending activity changed. Review again.")
+            return result
 
     @router.post("/api/local/accounts/youtube/transfer", dependencies=protected)
     def transfer():

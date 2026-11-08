@@ -257,3 +257,68 @@ def test_windows_vault_encrypts_account_record(tmp_path):
     vault.write("youtube", {"cookie": "private-fixture"})
     assert "private-fixture" not in (tmp_path / "youtube.sealed").read_text()
     assert vault.read("youtube") == {"cookie": "private-fixture"}
+
+
+def test_recovery_requires_confirmation_for_exact_account_and_pending_reports(tmp_path, monkeypatch):
+    settings = Settings(tmp_path, local_setup=False)
+    vault = MemoryVault()
+    auth = {"cookie": "fixture", "authorization": "fixture"}
+    youtube = FakeYouTube()
+    vault.write("youtube", {"auth": auth, "label": "@fixture", "identity": youtube.channel})
+    providers = LocalProviders(settings, vault)
+    monkeypatch.setattr("radio_prototype.local_accounts.youtube_client", lambda _: youtube)
+    app = create_app(settings, providers, runtime_token="device-test", embedded=True)
+    store = app.state.store
+    track = {"id": 1, "title": "Fixture", "artists": ["Artist"], "duration": 180}
+    missing = {"youtube": None, "tidal": "original-tidal"}
+    original_channel = youtube.channel
+    pending = store.occurrence(track, "song", accounts=missing)
+    different = store.occurrence(
+        track, "other-song", accounts=missing | {"youtube": "UC" + "b" * 22}
+    )
+    ambiguous = store.occurrence(track | {"id": 2}, "ambiguous-song", accounts=missing)
+    store.schedule_rating(pending, "LIKE", "first", tidal_favorite=True)
+    store.schedule_rating(different, "DISLIKE", "second")
+    store.schedule_rating(ambiguous, "LIKE", "third", tidal_favorite=True)
+    uncertain = next(
+        row for row in store.submissions()
+        if row["occurrence_id"] == ambiguous and row["provider"] == "youtube"
+    )
+    store.outcome(uncertain["id"], "uncertain", "Outcome unknown")
+    for occurrence in (pending, ambiguous):
+        for i in range(6):
+            assert store.event(f"{occurrence}-{i}", occurrence, 5)
+    newer = store.occurrence(
+        track, "song", accounts=missing | {"youtube": original_channel}
+    )
+    store.schedule_rating(newer, "INDIFFERENT", "newer")
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        path = "/api/local/accounts/youtube/recovery"
+        headers = {"Authorization": "Bearer device-test"}
+        assert client.get(path).status_code == 401
+        review = client.get(path, headers=headers).json()
+        assert review["count"] == 2 and review["label"] == "@fixture"
+        assert store.bound_account(pending, "youtube") is None
+
+        youtube.channel = "UC" + "c" * 22
+        confirmation = {"confirmation": review["confirmation"]}
+        assert client.post(path, json=confirmation, headers=headers).status_code == 409
+        assert store.bound_account(pending, "youtube") is None
+
+        youtube.channel = original_channel
+        assert client.post(path, json=confirmation, headers=headers).json() == {"reviewed": 2}
+        assert client.post(path, json=confirmation, headers=headers).status_code == 409
+        assert client.get(path, headers=headers).json()["count"] == 0
+
+    assert store.bound_account(pending, "youtube") == original_channel
+    assert store.bound_account(pending, "tidal") == "original-tidal"
+    assert store.bound_account(different, "youtube") == "UC" + "b" * 22
+    assert store.bound_account(ambiguous, "youtube") is None
+    rows = {
+        (row["occurrence_id"], row["kind"]): row["state"] for row in store.submissions()
+    }
+    assert rows[pending, "history"] == "pending"
+    assert rows[pending, "rating:first"] == "superseded"
+    assert rows[pending, "tidal_favorite:first"] == "pending"
+    assert rows[ambiguous, "rating:third"] == "uncertain"
+    assert rows[newer, "rating:newer"] == "pending"

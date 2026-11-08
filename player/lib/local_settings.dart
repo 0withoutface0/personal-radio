@@ -105,6 +105,64 @@ class _LocalSettingsState extends State<_LocalSettings>
     if (mounted) setState(() => status = 'YouTube Music connected.');
   }
 
+  Future<void> _recoverYoutubeActivity() async {
+    final radio = host.radio;
+    await radio.sync();
+    if (radio.outbox.isNotEmpty) {
+      throw ApiFailure(
+        0,
+        'Sync listening events on this device, then try again.',
+      );
+    }
+    const path = '/api/local/accounts/youtube/recovery';
+    final client = api;
+    final review = await client.call(path);
+    if (!mounted || !identical(host.radio, radio)) return;
+    final count = review['count'] as int;
+    if (count == 0) {
+      setState(
+        () =>
+            status = 'There is no unassigned YouTube activity on this device.',
+      );
+      return;
+    }
+    final label = review['label'] as String;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Send held YouTube activity?'),
+        content: Text(
+          '$count pending YouTube reports were saved without a verified channel. '
+          'Send them to $label only if the plays and ratings were made using that account.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialog, true),
+            child: Text('Send to $label'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || !identical(host.radio, radio)) return;
+    await client.call(
+      path,
+      body: {'confirmation': review['confirmation']},
+      timeout: const Duration(seconds: 55),
+    );
+    await radio.sync();
+    await radio.refreshReport();
+    if (mounted) {
+      setState(
+        () => status =
+            'Approved for YouTube sync. See Listening for delivery status.',
+      );
+    }
+  }
+
   Future<void> _pasteYoutube() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -312,8 +370,10 @@ class _LocalSettingsState extends State<_LocalSettings>
               if (radio.accountLinked('youtube') &&
                   radio.localAccounts?['youtube']?['reporting'] == false)
                 const Text(
-                  'Listening reports are paused until the channel can be verified.',
+                  'Listening reports are paused. Tap Check accounts to verify your channel.',
                 ),
+              if (radio.localAccounts?['youtube']?['reporting'] == true)
+                const Text('Channel verified for activity reporting.'),
               Wrap(
                 spacing: 6,
                 children: [
@@ -344,6 +404,13 @@ class _LocalSettingsState extends State<_LocalSettings>
                           : 'Connect from Windows',
                     ),
                   ),
+                  if (radio.localAccounts?['youtube']?['reporting'] == true)
+                    TextButton(
+                      onPressed: available
+                          ? () => run(_recoverYoutubeActivity)
+                          : null,
+                      child: const Text('Review held YouTube activity'),
+                    ),
                   if (radio.accountLinked('youtube'))
                     TextButton(
                       onPressed: available

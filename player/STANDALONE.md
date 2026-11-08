@@ -24,7 +24,9 @@ Open **Settings → On this device**.
 - **Firefox**. The browser helper source is in [firefox-addon](../firefox-addon/README.md). In a compatible development build, open **Connect with Firefox** from Settings, open the add-on on the setup page, and explicitly approve capture. Choose **Check accounts** when it finishes. Distributed builds require Mozilla signing and review before enabling this option.
 - **Tidal**. Choose **Open Tidal sign-in** and sign in with your own subscription in the system browser. Copy the final HTTPS redirect URL to finish setup. Android can also share the final URL to Personal Radio, then choose **Finish Tidal sign-in**. Use the browser’s address bar or share action on the final page. Use this manual sign-in when setting up Tidal without a Windows setup QR.
 
-The app validates the imported YouTube session. Listening and ratings stay pending if it cannot verify the channel or if a different account is connected. Sign back into the originating account to release those records. Recap remains independently unverified.
+The app verifies the YouTube Music channel from the signed-in account menu. **Check accounts** retries verification using the saved session. Reports tied to a different channel stay pending until that channel returns.
+
+If a previous build saved pending plays or ratings before it could identify the channel, choose **Review held YouTube activity** after verification. Confirm only if the listed activity was for the shown channel. You can check delivery in **Listening**. Recap remains independently unverified.
 
 ## Share listening history
 

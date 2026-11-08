@@ -213,7 +213,7 @@ def create_app(settings=None, providers=None, *, runtime_token=None, embedded=Fa
     if local_accounts:
         from .local_api import account_routes
 
-        app.include_router(account_routes(providers, authorize))
+        app.include_router(account_routes(providers, store, authorize))
 
     def playback_device(request: Request):
         if not store.owns_lease(request.headers.get("x-device-id", "")):
