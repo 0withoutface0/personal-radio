@@ -386,8 +386,8 @@ class Store:
         with self.connect() as db:
             db.execute(
                 "UPDATE submissions SET state=?, detail=?, updated=? WHERE id=? "
-                "AND (? IS NULL OR state=?)",
-                (state, detail, now(), submission_id, expected_state, expected_state),
+                "AND (? IS NULL OR state=?) AND (state<>? OR detail<>?)",
+                (state, detail, now(), submission_id, expected_state, expected_state, state, detail),
             )
 
     def evidence(self, kind, status, details):

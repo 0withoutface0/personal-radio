@@ -32,7 +32,11 @@ class RadioController extends ChangeNotifier {
   final Stopwatch _time = Stopwatch()..start();
   ListeningClock _clock = ListeningClock();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
-  Timer? _timer;
+  Timer? _watchdog, _syncTimer, _ratingStatusTimer;
+  bool _watchPlayback = false;
+  bool _foreground = true, _shuttingDown = false, _dispatchNeeded = false;
+  int _syncFailures = 0;
+  Duration _lastPositionPaint = Duration.zero;
   Future<void>? _loadingMore;
   Future<void>? _syncing, _preloading;
   _PreparedTrack? _prepared;
@@ -40,15 +44,12 @@ class RadioController extends ChangeNotifier {
   bool _handoff = false;
   Duration _nextPreloadAttempt = Duration.zero;
   bool _recovering = false;
-  bool _draining = false,
-      _advancing = false,
-      _prefetching = false,
-      _seeking = false;
+  bool _advancing = false, _prefetching = false, _seeking = false;
   bool _interruptedPlaying = false, _opening = false, _disposed = false;
   int _generation = 0, _reconnects = 0;
   bool _renewingLease = false;
   bool _resumeWanted = false, _needsReopen = false;
-  int _transportEpoch = 0;
+  int _transportEpoch = 0, _seekRevision = 0;
   Duration _lastProgressAt = Duration.zero, _nextRecovery = Duration.zero;
   Duration? _stableSince;
   Duration? _leaseValidUntil;
@@ -89,6 +90,14 @@ class RadioController extends ChangeNotifier {
       ? entries[currentIndex]
       : null;
   bool get ready => api != null && connected;
+  bool get playbackActive =>
+      ready &&
+      (playing ||
+          (_resumeWanted &&
+              current != null &&
+              (_opening ||
+                  _needsReopen ||
+                  _loadedOccurrence == current?.occurrenceId)));
   bool get changingQueue => busy || _advancing || _opening || _handoff;
   RadioController(
     this.disk, {
@@ -128,6 +137,7 @@ class RadioController extends ChangeNotifier {
 
   void update() {
     if (!_disposed) {
+      _updateWatchdog();
       notifyListeners();
       transportChanged?.call();
     }
@@ -196,10 +206,6 @@ class RadioController extends ChangeNotifier {
         }),
       );
     }
-    _timer = Timer.periodic(
-      const Duration(seconds: 2),
-      (_) => unawaited(_background()),
-    );
     if (token.isNotEmpty) {
       try {
         await connect(origin, token);
@@ -218,6 +224,7 @@ class RadioController extends ChangeNotifier {
     player = playback;
     await configureNetworkPlayback(player!);
     await player!.setVolume(volume);
+    _watchPlayback = true;
     _subscriptions.add(
       player!.stream.playing.listen((value) {
         playing = value;
@@ -317,6 +324,8 @@ class RadioController extends ChangeNotifier {
     final candidate = RadioApi(validated, accessToken.trim(), deviceId);
     try {
       final accounts = await candidate.call('/api/accounts');
+      candidate.supportsEventBatches =
+          accounts is Map && accounts['event_batches'] == true;
       if (localMode) {
         if (accounts is! Map || accounts['embedded'] != true) {
           throw const FormatException(
@@ -329,7 +338,12 @@ class RadioController extends ChangeNotifier {
       candidate.close();
       rethrow;
     }
-    await pause();
+    await pause(flush: false);
+    _syncTimer?.cancel();
+    _syncTimer = null;
+    _ratingStatusTimer?.cancel();
+    _syncFailures = 0;
+    _dispatchNeeded = false;
     api?.close();
     api = candidate;
     origin = validated;
@@ -349,6 +363,7 @@ class RadioController extends ChangeNotifier {
       unawaited(loadHome());
     }
     unawaited(refreshReport());
+    unawaited(sync());
     if (localMode &&
         accountLinked('youtube') &&
         localAccounts?['youtube']?['reporting'] == false) {
@@ -375,7 +390,6 @@ class RadioController extends ChangeNotifier {
     }
     if (_disposed || !identical(api, client)) return;
     await refreshLocalAccounts(reloadHome: reloadHome);
-    if (!_disposed && identical(api, client)) unawaited(sync());
   }
 
   Future<void> refreshLocalAccounts({bool reloadHome = true}) async {
@@ -400,6 +414,7 @@ class RadioController extends ChangeNotifier {
       }
     }
     update();
+    unawaited(sync());
   }
 
   Future<void> search(String query, {String kind = 'songs'}) async {
@@ -1132,7 +1147,7 @@ class RadioController extends ChangeNotifier {
       error = null;
       update();
       unawaited(prefetch());
-      unawaited(sync());
+      unawaited(sync(force: false));
     } catch (e) {
       await pause();
       fail(e);
@@ -1156,6 +1171,7 @@ class RadioController extends ChangeNotifier {
       await player!.pause();
       await _cancelPreload();
       _clock.reset();
+      if (outbox.isNotEmpty) unawaited(sync(force: false));
       for (int attempted = 0; attempted < 150; attempted++) {
         if (currentIndex + 1 >= entries.length && nextCursor != null) {
           await _more();
@@ -1183,6 +1199,7 @@ class RadioController extends ChangeNotifier {
       fail(e);
     } finally {
       _advancing = false;
+      update();
     }
   }
 
@@ -1438,7 +1455,13 @@ class RadioController extends ChangeNotifier {
         }),
       );
     }
-    if (!_disposed) notifyListeners();
+    final now = _time.elapsed;
+    if (!_disposed &&
+        _foreground &&
+        now - _lastPositionPaint >= const Duration(milliseconds: 250)) {
+      _lastPositionPaint = now;
+      notifyListeners();
+    }
   }
 
   Future<void> _event(double seconds, {bool completed = false}) async {
@@ -1456,6 +1479,7 @@ class RadioController extends ChangeNotifier {
       },
     });
     await persist();
+    _scheduleSync();
   }
 
   Future<void> rate(String value) async {
@@ -1519,32 +1543,96 @@ class RadioController extends ChangeNotifier {
     await sync();
   }
 
-  Future<void> sync() async {
+  void setForeground(bool foreground) {
+    if (_disposed || _foreground == foreground) return;
+    _foreground = foreground;
+    if (foreground) {
+      update();
+      if (ready) unawaited(sync());
+    } else {
+      _ratingStatusTimer?.cancel();
+    }
+  }
+
+  void _scheduleSync() {
+    if (_disposed ||
+        _shuttingDown ||
+        !ready ||
+        _syncTimer != null ||
+        (outbox.isEmpty && !_dispatchNeeded)) {
+      return;
+    }
+    final delay = switch (_syncFailures) {
+      0 => const Duration(seconds: 6),
+      1 => const Duration(seconds: 15),
+      2 => const Duration(minutes: 1),
+      _ => const Duration(minutes: 5),
+    };
+    _syncTimer = Timer(delay, () {
+      _syncTimer = null;
+      unawaited(sync(force: false));
+    });
+  }
+
+  Future<void> sync({bool force = true}) async {
     while (_syncing != null) {
       await _syncing;
     }
-    if (!ready) return;
-    final operation = _syncOnce();
+    if (_disposed || !ready || (!force && outbox.isEmpty && !_dispatchNeeded)) {
+      return;
+    }
+    _syncTimer?.cancel();
+    _syncTimer = null;
+    final operation = _syncOnce(api!, force: force);
     _syncing = operation;
     try {
       await operation;
     } finally {
       _syncing = null;
+      _scheduleSync();
     }
   }
 
-  Future<void> _syncOnce() async {
-    if (_draining || !ready) return;
-    _draining = true;
-    bool sentRating = false;
+  Future<void> _syncOnce(RadioApi client, {required bool force}) async {
+    final pending = List<Map<String, dynamic>>.of(outbox);
+    bool sentRating = false, acknowledged = false;
+    bool active() => !_disposed && identical(api, client);
+    Map<String, dynamic> body(Map<String, dynamic> event) =>
+        Map<String, dynamic>.from(event['body']);
     try {
       await disk.settled;
-      for (final event in List<Map<String, dynamic>>.from(outbox)) {
-        await api!.call(
-          event['path'],
-          body: Map<String, dynamic>.from(event['body']),
-        );
-        if (event['path'] == '/api/ratings') {
+      for (var index = 0; index < pending.length;) {
+        if (!active()) return;
+        final event = pending[index];
+        final path = event['path'] as String;
+        var delivered = [event];
+        if (path == '/api/events' && client.supportsEventBatches) {
+          final batch = pending
+              .skip(index)
+              .takeWhile((row) => row['path'] == path)
+              .take(64)
+              .toList();
+          final response = await client.call(
+            '/api/events/batch',
+            body: {'events': batch.map(body).toList()},
+          );
+          if (!active()) return;
+          if (response is! Map || response['accepted'] != batch.length) {
+            throw ApiFailure(
+              0,
+              'The server did not acknowledge the listening batch.',
+            );
+          }
+          delivered = batch;
+          _dispatchNeeded |= response['reporting'] == true;
+        } else {
+          await client.call(path, body: body(event));
+          if (!active()) return;
+          if (path == '/api/events' || path == '/api/ratings') {
+            _dispatchNeeded = true;
+          }
+        }
+        if (path == '/api/ratings') {
           sentRating = true;
           for (final rating in ratings.values) {
             if (rating.eventId == event['body']['id']) {
@@ -1553,25 +1641,77 @@ class RadioController extends ChangeNotifier {
             }
           }
         }
-        outbox.removeWhere((row) => row['id'] == event['id']);
-        await persist();
+        final deliveredIds = delivered.map((row) => row['id']).toSet();
+        outbox.removeWhere((row) => deliveredIds.contains(row['id']));
+        acknowledged = true;
+        index += delivered.length;
       }
-      await api!.call('/api/reporting/dispatch', body: {});
-      if (sentRating || currentRating?.needsStatus == true) {
-        await refreshReport();
+      if (force || _dispatchNeeded) {
+        _dispatchNeeded = true;
+        await client.call(
+          '/api/reporting/dispatch',
+          body: {if (force) 'retry_now': true},
+        );
+        if (!active()) return;
+        _dispatchNeeded = false;
       }
+      _syncFailures = 0;
       connectionMessage = localMode ? 'On this device' : 'Connected';
-    } catch (e) {
+    } catch (_) {
+      if (!active()) return;
+      _syncFailures++;
       connectionMessage = 'Offline · listening events saved';
     } finally {
-      _draining = false;
-      update();
+      if (active()) {
+        try {
+          if (acknowledged) await persist();
+        } catch (e) {
+          fail(e);
+        }
+        if (_foreground &&
+            (sentRating || (force && currentRating?.needsStatus == true))) {
+          await refreshReport();
+          if (currentRating?.needsStatus == true && !_shuttingDown) {
+            _refreshRatingStatus(client);
+          }
+        }
+        update();
+      }
+    }
+  }
+
+  void _refreshRatingStatus(RadioApi client) {
+    _ratingStatusTimer?.cancel();
+    _ratingStatusTimer = Timer(const Duration(seconds: 3), () async {
+      if (!_foreground || _disposed || !identical(api, client)) return;
+      await refreshReport();
+      if (_foreground &&
+          !_disposed &&
+          identical(api, client) &&
+          currentRating?.needsStatus == true) {
+        _ratingStatusTimer = Timer(const Duration(seconds: 15), () {
+          if (_foreground && !_disposed && identical(api, client)) {
+            unawaited(refreshReport());
+          }
+        });
+      }
+    });
+  }
+
+  void _updateWatchdog() {
+    if (_watchPlayback && playbackActive && !_shuttingDown) {
+      _watchdog ??= Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => unawaited(_background()),
+      );
+    } else {
+      _watchdog?.cancel();
+      _watchdog = null;
     }
   }
 
   Future<void> _background() async {
-    if (!ready) return;
-    if (!_draining) unawaited(sync());
+    if (!playbackActive) return;
     await maintainPlaybackLease();
     await checkPlaybackConnection();
     await preloadNext();
@@ -1621,15 +1761,18 @@ class RadioController extends ChangeNotifier {
     }
   }
 
-  Future<void> pause() async {
+  Future<void> pause({bool flush = true}) async {
     _resumeWanted = false;
     _transportEpoch++;
     _stableSince = null;
     playing = false;
     _clock.reset();
     if (player != null) await player!.pause();
+    _updateWatchdog();
     await _cancelPreload();
     await persist();
+    if (flush && outbox.isNotEmpty) unawaited(sync(force: false));
+    update();
   }
 
   Future<void> seek(Duration target) async {
@@ -1645,6 +1788,7 @@ class RadioController extends ChangeNotifier {
     } finally {
       _clock.reset();
       _seeking = false;
+      _seekRevision++;
       update();
     }
   }
@@ -1668,10 +1812,11 @@ class RadioController extends ChangeNotifier {
   }
 
   Future<void> shutdown() async {
-    _timer?.cancel();
-    await pause();
+    _shuttingDown = true;
+    _cancelTimers();
+    await pause(flush: false);
     try {
-      await sync().timeout(const Duration(seconds: 3));
+      await sync(force: false).timeout(const Duration(seconds: 3));
       await api?.call(
         '/api/device/lease',
         body: {'device_id': deviceId, 'release': true},
@@ -1684,12 +1829,26 @@ class RadioController extends ChangeNotifier {
     await player?.dispose();
     api?.close();
   }
+
+  void _cancelTimers() {
+    _watchdog?.cancel();
+    _syncTimer?.cancel();
+    _ratingStatusTimer?.cancel();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _cancelTimers();
+    super.dispose();
+  }
 }
 
 class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
   static const likeAction = 'personal_radio.like';
   RadioController radio;
   bool _stopped = true;
+  Object? _publishedState;
   String? _publishedOccurrence;
   ValueChanged<String?>? _onOccurrenceChanged;
 
@@ -1709,6 +1868,7 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
     radio = controller;
     radio.transportChanged = publish;
     _stopped = true;
+    _publishedState = null;
     mediaItem.add(null);
     publish();
   }
@@ -1722,9 +1882,12 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
       _onOccurrenceChanged?.call(occurrence);
     }
     final liked = radio.currentRating?.value == 'LIKE';
+    final duration = radio.duration > Duration.zero
+        ? radio.duration
+        : current?.song.duration;
     if (current != null &&
         (mediaItem.value?.id != current.occurrenceId ||
-            mediaItem.value?.duration != radio.duration ||
+            mediaItem.value?.duration != duration ||
             mediaItem.value?.rating?.hasHeart() != liked)) {
       mediaItem.add(
         MediaItem(
@@ -1732,9 +1895,7 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
           title: current.song.title,
           artist: current.song.artist,
           album: current.song.source['album'],
-          duration: radio.duration > Duration.zero
-              ? radio.duration
-              : current.song.duration,
+          duration: duration,
           rating: Rating.newHeartRating(liked),
           artUri: current.song.artwork == null
               ? null
@@ -1742,14 +1903,31 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
         ),
       );
     }
+    final canRate =
+        radio.ready && current?.tidal != null && current!.song.id.isNotEmpty;
+    final processing = _stopped || current == null
+        ? AudioProcessingState.idle
+        : radio.buffering
+        ? AudioProcessingState.buffering
+        : AudioProcessingState.ready;
+    final state = (
+      occurrence,
+      duration,
+      radio.playing,
+      processing,
+      canRate,
+      liked,
+      radio._transportEpoch,
+      radio._seekRevision,
+    );
+    if (_publishedState == state) return;
+    _publishedState = state;
     playbackState.add(
       PlaybackState(
         controls: [
           radio.playing ? MediaControl.pause : MediaControl.play,
           MediaControl.skipToNext,
-          if (radio.ready &&
-              current?.tidal != null &&
-              current!.song.id.isNotEmpty)
+          if (canRate)
             MediaControl.custom(
               androidIcon: liked
                   ? 'drawable/ic_radio_like_filled'
@@ -1757,7 +1935,7 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
               label: liked ? 'Remove like' : 'Like on YouTube Music and Tidal',
               name: likeAction,
               extras: {
-                'occurrence_id': current.occurrenceId,
+                'occurrence_id': occurrence,
                 'value': liked ? 'INDIFFERENT' : 'LIKE',
               },
             ),
@@ -1770,16 +1948,9 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
           MediaAction.seekBackward,
           MediaAction.setRating,
         },
-        androidCompactActionIndices:
-            radio.ready && current?.tidal != null && current!.song.id.isNotEmpty
-            ? const [0, 1, 2]
-            : const [0, 1],
+        androidCompactActionIndices: canRate ? const [0, 1, 2] : const [0, 1],
         playing: radio.playing,
-        processingState: _stopped || current == null
-            ? AudioProcessingState.idle
-            : radio.buffering
-            ? AudioProcessingState.buffering
-            : AudioProcessingState.ready,
+        processingState: processing,
         updatePosition: radio.position,
         bufferedPosition: radio.player?.state.buffer ?? Duration.zero,
       ),

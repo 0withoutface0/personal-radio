@@ -58,6 +58,7 @@ class Engine:
         return {"origin": self.origin, "token": self.token}
 
     def stop(self):
+        self.app.state.reporter.close()
         self.server.should_exit = True
         self.thread.join(5)
         if self.thread.is_alive():

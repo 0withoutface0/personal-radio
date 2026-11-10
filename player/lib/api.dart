@@ -45,6 +45,7 @@ String validateServer(String input) {
 class RadioApi {
   final String origin, token, deviceId;
   final http.Client _client;
+  bool supportsEventBatches = false;
   RadioApi(this.origin, this.token, this.deviceId, {http.Client? client})
     : _client = client ?? http.Client();
   Map<String, String> get headers => {

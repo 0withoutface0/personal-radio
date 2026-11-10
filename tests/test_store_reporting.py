@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import RLock
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -140,6 +141,40 @@ def test_new_history_is_verified_after_successful_write(store):
     assert evidence["kind"] == "history_visibility"
     assert evidence["status"] == "passed"
     assert store.report()["recap"] == "unverified"
+
+
+def test_automatic_dispatch_backs_off_reads_and_never_resends_uncertain_writes(
+    store, monkeypatch,
+):
+    add_time(store, occurrence(store), 30)
+    clock = SimpleNamespace(now=0)
+    monkeypatch.setattr(
+        "radio_prototype.reporting.time", SimpleNamespace(monotonic=lambda: clock.now),
+    )
+
+    class Flaky(FakeYouTube):
+        reads = 0
+
+        def history(self):
+            self.reads += 1
+            if self.reads == 1:
+                raise ConnectionError("Fixture offline")
+            return []
+
+    provider = Flaky(timeout=True)
+    reporter = Reporter(store, provider)
+    reporter.flush(automatic=True)
+    assert provider.reads == 1 and provider.writes == 0
+    reporter.flush(automatic=True)
+    assert provider.reads == 1 and provider.writes == 0
+    clock.now = 15
+    reporter.flush(automatic=True)
+    assert provider.reads == 3 and provider.writes == 1
+    reporter.flush(automatic=True)
+    assert provider.reads == 3
+    assert store.submissions()[0]["state"] == "uncertain"
+    reporter.flush(automatic=True, retry_now=True)
+    assert provider.reads == 4 and provider.writes == 1
 
 
 def test_old_history_does_not_prove_a_new_play(store):

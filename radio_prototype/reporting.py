@@ -1,16 +1,75 @@
 import json
 import threading
+import time
 from contextlib import nullcontext
 
 from .providers import ProviderUnavailable
 
 
 class Reporter:
+    retry_delays = (15, 60, 300)
+
     def __init__(self, store, providers, *, bound_accounts=False):
         self.store = store
         self.providers = providers
         self.lock = threading.Lock()
         self.bound_accounts = bound_accounts
+        self._schedule_lock = threading.Lock()
+        self._timer = None
+        self._running = self._requested = self._retry_now = self._closed = False
+        self._retries = {}
+
+    def dispatch(self, *, retry_now=False):
+        with self._schedule_lock:
+            if self._closed:
+                return
+            self._requested = True
+            self._retry_now |= retry_now
+            if not self._running:
+                if self._timer is not None:
+                    self._timer.cancel()
+                self._schedule(0)
+
+    def _schedule(self, delay):
+        self._timer = threading.Timer(delay, self._work)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _work(self):
+        with self._schedule_lock:
+            if self._closed or self._timer is not threading.current_thread():
+                return
+            self._timer = None
+            self._running = True
+            retry_now = self._retry_now
+            self._requested = self._retry_now = False
+        try:
+            self.flush(automatic=True, retry_now=retry_now)
+        finally:
+            with self._schedule_lock:
+                self._running = False
+                if not self._closed:
+                    due = [due for _, due in self._retries.values() if due is not None]
+                    if self._requested:
+                        self._schedule(0)
+                    elif due:
+                        self._schedule(max(0, min(due) - time.monotonic()))
+
+    def close(self):
+        with self._schedule_lock:
+            self._closed = True
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+
+    def _due(self, submission_id):
+        _, due = self._retries.get(submission_id, (0, 0))
+        return due is not None and time.monotonic() >= due
+
+    def _defer(self, submission_id):
+        tries, _ = self._retries.get(submission_id, (0, 0))
+        due = time.monotonic() + self.retry_delays[tries] if tries < len(self.retry_delays) else None
+        self._retries[submission_id] = (tries + 1, due)
 
     def _hold_reason(self, row):
         if not self.bound_accounts:
@@ -26,11 +85,20 @@ class Reporter:
             return "Held for a different account. Reconnect the original account."
         return None
 
-    def flush(self):
-        # Explicit dispatch only during the prototype. Pending work survives restarts.
+    def flush(self, *, automatic=False, retry_now=False):
         with self.lock, self.providers.lock if self.bound_accounts else nullcontext():
-            for row in self.store.submissions():
-                if row["state"] != "pending":
+            rows = self.store.submissions()
+            if automatic:
+                if retry_now:
+                    self._retries.clear()
+                candidates = {row["id"] for row in rows if row["state"] in (
+                    "pending", "submitted", "uncertain",
+                )}
+                self._retries = {
+                    key: value for key, value in self._retries.items() if key in candidates
+                }
+            for row in rows:
+                if row["state"] != "pending" or (automatic and not self._due(row["id"])):
                     continue
                 held = self._hold_reason(row)
                 if held:
@@ -40,6 +108,8 @@ class Reporter:
                         held,
                         expected_state="pending",
                     )
+                    if automatic:
+                        self._retries.pop(row["id"], None)
                     continue
                 # Preflight failures have not sent any mutation and remain safely pending.
                 try:
@@ -59,9 +129,13 @@ class Reporter:
                         else f"Account unavailable ({type(error).__name__})"
                     )
                     self.store.outcome(row["id"], "pending", detail, expected_state="pending")
+                    if automatic:
+                        self._defer(row["id"])
                     continue
                 if not self.store.claim(row["id"], baseline):
                     continue
+                if automatic:
+                    self._retries.pop(row["id"], None)
                 try:
                     if row["provider"] == "tidal":
                         accepted = self.providers.set_tidal_favorite(
@@ -94,20 +168,26 @@ class Reporter:
                         "uncertain",
                         f"Mutation outcome unknown ({type(error).__name__}); do not resend",
                     )
-            self.reconcile()
+            self._reconcile(automatic=automatic)
 
     def reconcile(self):
-        with self.providers.lock if self.bound_accounts else nullcontext():
+        with self.lock, self.providers.lock if self.bound_accounts else nullcontext():
             self._reconcile()
 
-    def _reconcile(self):
+    def _reconcile(self, *, automatic=False):
         rows = [
             row for row in self.store.submissions() if row["state"] in ("submitted", "uncertain")
         ]
         history = None
         for row in rows:
-            if self._hold_reason(row):
+            if automatic and not self._due(row["id"]):
                 continue
+            if self._hold_reason(row):
+                if automatic:
+                    self._retries.pop(row["id"], None)
+                continue
+            if automatic:
+                self._defer(row["id"])
             try:
                 if row["provider"] == "tidal":
                     if self.providers.check_tidal_favorite(row["tidal_id"], row["value"] == "LIKE"):
@@ -117,6 +197,8 @@ class Reporter:
                             else "Removal from Tidal favorites verified"
                         )
                         self.store.outcome(row["id"], "visible", detail)
+                        if automatic:
+                            self._retries.pop(row["id"], None)
                     else:
                         self.store.outcome(
                             row["id"],
@@ -134,6 +216,8 @@ class Reporter:
                             "visible",
                             "Song visible in account history; occurrence attribution unverified",
                         )
+                        if automatic:
+                            self._retries.pop(row["id"], None)
                         baseline = json.loads(row["baseline"] or "null")
                         verified_new = (
                             baseline is not None
@@ -152,6 +236,8 @@ class Reporter:
                         )
                 elif self.providers.check_rating(row["video_id"], row["value"]):
                     self.store.outcome(row["id"], "visible", "Like visible on account")
+                    if automatic:
+                        self._retries.pop(row["id"], None)
                 else:
                     self.store.outcome(
                         row["id"],

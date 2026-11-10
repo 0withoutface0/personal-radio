@@ -43,7 +43,7 @@ Playback events are intervals of measured audio time rather than wall-clock gaps
 
 A history submission is unique per occurrence, not per YouTube video. Distinct later occurrences may report the same video again. Event insertion, cumulative time, and history scheduling share one SQLite transaction. Source decoding produces no listening events.
 
-`POST /api/events/batch` accepts a JSON object with an `events` array of 1–64 ordinary playback events. It records them in order in one transaction and returns `accepted`, `inserted`, and `reporting`. An identical retry counts already recorded events as accepted. `reporting` signals newly eligible history awaiting dispatch. Older clients can keep using `POST /api/events`.
+`POST /api/events/batch` accepts a JSON object with an `events` array of 1–64 ordinary playback events. It records them in order in one transaction and returns `accepted`, `inserted`, and `reporting`. An identical retry counts already recorded events as accepted. `reporting` signals newly eligible history awaiting dispatch. `GET /api/accounts` advertises support as `event_batches: true`. Older clients and servers can keep using `POST /api/events`.
 
 Submission states: `pending`, `sending`, `submitted`, `visible`, `uncertain`. Startup recovery turns interrupted `sending` rows into `uncertain`. A `visible` result for a previously present history item does not independently pass the integration gate. The report retains that distinction. Responses never contain upstream signed media URLs or provider authentication data.
 
@@ -61,7 +61,7 @@ The v0.3.1 client bounds each renewal to five seconds and allows one renewal in 
 
 `GET /api/streams/{uuid}/quality` inspects the proxied source using ffprobe and returns `verified`, `codec`, `bit_depth`, `sample_rate`, and `source_quality`. A failed probe returns `verified: false`; clients must not display provider resolution as measured resolution. The probe does not decode or transcode audio for playback. Set `RADIO_INTERNAL_ORIGIN` when the internal API origin differs from loopback port 8765.
 
-`POST /api/reporting/dispatch` schedules a serialized background flush and returns 202 immediately. It never retries ambiguous provider mutations. `GET /api/report` also includes `top_artists` (grouped by stored artist credit) alongside durable totals and top songs.
+`POST /api/reporting/dispatch` schedules a serialized background flush and returns 202 immediately. Temporary preflight and visibility checks retry after 15 seconds, one minute, and five minutes. `{"retry_now": true}` retries eligible work immediately after a manual sync or account check. Ambiguous mutations remain eligible only for read-only verification. `GET /api/report` also includes `top_artists` (grouped by stored artist credit) alongside durable totals and top songs.
 
 `POST /api/match` accepts optional `video_type` and `counterpart` audio metadata (the same recording fields, without recursive counterparts). Queues retain these fields when YouTube supplies them. Old video entries without album/type metadata are refreshed by their original video ID. A linked audio counterpart takes priority; otherwise official-song search requires matching normalized title, complete artist credits, recording version and compatible video runtime. Tidal duration checks remain within two seconds of the audio reference. Known explicit/clean and ISRC conflicts still reject a match. Saved manual corrections take priority.
 

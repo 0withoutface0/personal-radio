@@ -27,7 +27,9 @@ class PlayerHost extends ChangeNotifier {
   int _syncTicks = 0;
   void setForeground(bool foreground) {
     _foreground = foreground;
+    radio.setForeground(foreground);
     if (foreground) _syncTicks = 0;
+    _updateMonitor();
   }
 
   late final Directory support;
@@ -55,9 +57,22 @@ class PlayerHost extends ChangeNotifier {
           Platform.environment.containsKey('RADIO_PAIRING_FILE'),
     );
     radio = await _open(local);
+    radio.addListener(_updateMonitor);
     if (local) unawaited(peer.restore());
     await preferences.save({'mode': local ? 'local' : 'server'});
-    _monitor = Timer.periodic(const Duration(seconds: 8), (_) {
+    _updateMonitor();
+  }
+
+  void _updateMonitor() {
+    if (changing ||
+        !radio.localMode ||
+        !radio.ready ||
+        (!_foreground && !radio.playbackActive)) {
+      _monitor?.cancel();
+      _monitor = null;
+      return;
+    }
+    _monitor ??= Timer.periodic(const Duration(seconds: 8), (_) {
       if (!radio.localMode || !radio.ready || changing) return;
       unawaited(recover());
       if (Platform.isAndroid &&
@@ -168,6 +183,8 @@ class PlayerHost extends ChangeNotifier {
     changing = true;
     notifyListeners();
     final old = radio;
+    old.removeListener(_updateMonitor);
+    _updateMonitor();
     RadioController? candidate;
     try {
       await _recovery;
@@ -199,6 +216,9 @@ class PlayerHost extends ChangeNotifier {
       radio.fail(failure);
     } finally {
       changing = false;
+      radio.setForeground(_foreground);
+      radio.addListener(_updateMonitor);
+      _updateMonitor();
       if (radio.localMode) unawaited(peer.restore());
       notifyListeners();
     }
@@ -232,6 +252,7 @@ class PlayerHost extends ChangeNotifier {
   }
 
   Future<void> shutdown() async {
+    radio.removeListener(_updateMonitor);
     _monitor?.cancel();
     await _recovery;
     await peer.close();

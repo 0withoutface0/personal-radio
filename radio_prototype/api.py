@@ -86,6 +86,10 @@ class ListeningInput(BaseModel):
     all_time: bool = False
 
 
+class DispatchInput(BaseModel):
+    retry_now: bool = False
+
+
 class RatingInput(BaseModel):
     id: UUID | None = None
     occurrence_id: UUID
@@ -209,7 +213,6 @@ def create_app(settings=None, providers=None, *, runtime_token=None, embedded=Fa
         raise HTTPException(401, "Device bearer token required")
 
     protected = [Depends(authorize)]
-    dispatch_lock = threading.Lock()
     if embedded:
         from .history_transfer import history_routes
 
@@ -246,11 +249,12 @@ def create_app(settings=None, providers=None, *, runtime_token=None, embedded=Fa
     @app.get("/api/accounts", dependencies=protected)
     def accounts():
         if local_accounts:
-            return {**providers.status(), "embedded": True, "recap": "unverified"}
+            return {**providers.status(), "embedded": True, "event_batches": True, "recap": "unverified"}
         return {
             "youtube": {"credential_file": settings.youtube_file.exists()},
             "tidal": {"credential_file": settings.tidal_file.exists(), "required_auth": "PKCE"},
             "prototype": True,
+            "event_batches": True,
             "recap": "unverified",
         }
 
@@ -588,16 +592,8 @@ def create_app(settings=None, providers=None, *, runtime_token=None, embedded=Fa
         return {"queued": True}
 
     @app.post("/api/reporting/dispatch", dependencies=protected, status_code=202)
-    def dispatch():
-        if dispatch_lock.acquire(blocking=False):
-
-            def run():
-                try:
-                    reporter.flush()
-                finally:
-                    dispatch_lock.release()
-
-            threading.Thread(target=run, daemon=True).start()
+    def dispatch(body: DispatchInput | None = None):
+        reporter.dispatch(retry_now=body.retry_now if body else False)
         return {"scheduled": True}
 
     @app.post("/api/reporting/flush", dependencies=protected)
