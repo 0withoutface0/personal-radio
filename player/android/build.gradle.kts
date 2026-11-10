@@ -16,6 +16,9 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
 subprojects {
+    if (name == "audio_service" && providers.environmentVariable("RADIO_TEST_PAUSED_WAKE_LOCK").orNull == "1") {
+        apply(from = rootProject.file("paused-wake-lock.gradle"))
+    }
     project.evaluationDependsOn(":app")
 }
 

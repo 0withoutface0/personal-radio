@@ -1851,6 +1851,13 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
   Object? _publishedState;
   String? _publishedOccurrence;
   ValueChanged<String?>? _onOccurrenceChanged;
+  ValueChanged<bool>? _onPlaybackIdleChanged;
+  bool? _publishedIdle;
+
+  void observePlaybackIdle(ValueChanged<bool> listener) {
+    _onPlaybackIdleChanged = listener;
+    publish();
+  }
 
   void observeOccurrence(ValueChanged<String?> listener) {
     _onOccurrenceChanged = listener;
@@ -1869,12 +1876,23 @@ class RadioAudioHandler extends BaseAudioHandler with SeekHandler {
     radio.transportChanged = publish;
     _stopped = true;
     _publishedState = null;
+    _publishedIdle = null;
     mediaItem.add(null);
     publish();
   }
 
   void publish() {
     if (radio.playing) _stopped = false;
+    if (_onPlaybackIdleChanged != null) {
+      final idle =
+          !radio.playbackActive &&
+          !(radio._advancing && radio.hasLease) &&
+          !radio._handoff;
+      if (_publishedIdle != idle) {
+        _publishedIdle = idle;
+        _onPlaybackIdleChanged!(idle);
+      }
+    }
     final current = radio.current;
     final occurrence = current?.occurrenceId;
     if (occurrence != _publishedOccurrence) {

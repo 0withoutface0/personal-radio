@@ -150,3 +150,7 @@ flutter test integration_test/preload_fixture_test.dart -d YOUR_EMULATOR
 ```
 
 The first test uses a fake transport/API, checks the native wallpaper palette and selected green theme, and publishes a fixture Like through the foreground media service. The second plays generated local silence, including Hi-Res FLAC HLS; no real history or ratings are sent. Physical headset and OEM notification layout checks remain separate.
+
+### Android paused wake-lock candidate
+
+Keep the release defaults until pause and resume pass on the physical phone from the widget, lock screen, notification, and headset. For a local test build only, set `RADIO_TEST_PAUSED_WAKE_LOCK=1` in the build environment and add `--dart-define=RADIO_TEST_PAUSED_WAKE_LOCK=true` to the APK build command. Gradle verifies the pinned audio_service sources and prepares patched copies in its build directory. Verify the lock releases after a settled pause and is acquired during playback and recovery. Compare battery use off the charger on Wi-Fi and cellular before reporting a savings figure.

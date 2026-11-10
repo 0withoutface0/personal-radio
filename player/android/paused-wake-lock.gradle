@@ -1,0 +1,64 @@
+// Opt-in until resume is verified on the physical Android device. Patch the
+// pinned sources in Gradle's build directory, leaving the Pub cache intact.
+pluginManager.withPlugin('com.android.library') {
+    def sourcePath = 'src/main/java/com/ryanheise/audioservice/'
+    def upstream = [
+        'AudioService.java': '538dc027311ea070eea883f6dbf6b0e339c6c609cf6b395d018e359caea36938',
+        'AudioServicePlugin.java': 'afd40121a51d32ac4aed3b8142897e62460b57524df0ecdd0bfc97313262b1e0'
+    ]
+    def patched = layout.buildDirectory.dir('generated/personalRadioWakeLock')
+    def prepare = tasks.register('preparePersonalRadioWakeLock') {
+        inputs.files(upstream.keySet().collect { file(sourcePath + it) })
+        outputs.dir(patched)
+        doLast {
+            def output = patched.get().asFile
+            output.mkdirs()
+            upstream.each { name, expected ->
+                def input = file(sourcePath + name)
+                def hash = java.security.MessageDigest.getInstance('SHA-256')
+                    .digest(input.bytes).encodeHex().toString()
+                if (hash != expected) {
+                    throw new GradleException("Paused wake-lock patch requires the pinned audio_service sources: ${name}")
+                }
+                def source = input.getText('UTF-8').replace('\r\n', '\n')
+                if (name == 'AudioService.java') {
+                    source = source.replace(
+                        '    private void exitPlayingState() {\n',
+                        '''    private boolean personalRadioIdle;
+
+    void setPersonalRadioIdle(boolean idle) {
+        personalRadioIdle = idle;
+        if (idle && !playing) {
+            releaseWakeLock();
+        } else if (!idle && notificationCreated && mediaSession.isActive()) {
+            acquireWakeLock();
+        }
+    }
+
+    private void exitPlayingState() {
+        if (personalRadioIdle) releaseWakeLock();
+''')
+                } else {
+                    source = source.replace(
+                        '                case "setState": {\n',
+                        '''                case "setPersonalRadioIdle": {
+                    if (AudioService.instance != null) {
+                        AudioService.instance.setPersonalRadioIdle(Boolean.TRUE.equals(args.get("idle")));
+                    }
+                    result.success(null);
+                    break;
+                }
+                case "setState": {
+''')
+                }
+                new File(output, name).setText(source, 'UTF-8')
+            }
+        }
+    }
+
+    android.sourceSets.main.java {
+        upstream.keySet().each { exclude 'com/ryanheise/audioservice/' + it }
+        srcDir(patched.get().asFile)
+    }
+    tasks.named("preBuild").configure { dependsOn(prepare) }
+}

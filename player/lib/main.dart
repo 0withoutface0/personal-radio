@@ -40,6 +40,22 @@ Future<void> main() async {
         androidNotificationIcon: 'drawable/ic_radio_notification',
       ),
     );
+    if (const bool.fromEnvironment('RADIO_TEST_PAUSED_WAKE_LOCK')) {
+      const service = MethodChannel(
+        'com.ryanheise.audio_service.handler.methods',
+      );
+      handler.observePlaybackIdle((idle) async {
+        try {
+          await service.invokeMethod<void>('setPersonalRadioIdle', {
+            'idle': idle,
+          });
+        } on MissingPluginException {
+          // The normal release keeps upstream wake-lock behavior.
+        } on PlatformException {
+          // A media service may be going away during a mode change.
+        }
+      });
+    }
     const widget = MethodChannel('dev.personalradio/playback_widget');
     handler.observeOccurrence((id) async {
       try {
