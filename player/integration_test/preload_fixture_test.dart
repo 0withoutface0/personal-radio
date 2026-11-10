@@ -147,6 +147,13 @@ void main() {
           debugPrint(
             'Prepared handoff observation: ${(firstNew! - lastOld!).inMilliseconds}ms; next HTTP opened before EOF.',
           );
+          if (!hls) {
+            await r.pause();
+            await r.sync(force: false);
+            final requestsAtPause = f.requests.length;
+            await Future<void>.delayed(const Duration(seconds: 8));
+            expect(f.requests, hasLength(requestsAtPause));
+          }
         } finally {
           await r.shutdown();
           r.dispose();
