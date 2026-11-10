@@ -43,6 +43,8 @@ Playback events are intervals of measured audio time rather than wall-clock gaps
 
 A history submission is unique per occurrence, not per YouTube video. Distinct later occurrences may report the same video again. Event insertion, cumulative time, and history scheduling share one SQLite transaction. Source decoding produces no listening events.
 
+`POST /api/events/batch` accepts a JSON object with an `events` array of 1–64 ordinary playback events. It records them in order in one transaction and returns `accepted`, `inserted`, and `reporting`. An identical retry counts already recorded events as accepted. `reporting` signals newly eligible history awaiting dispatch. Older clients can keep using `POST /api/events`.
+
 Submission states: `pending`, `sending`, `submitted`, `visible`, `uncertain`. Startup recovery turns interrupted `sending` rows into `uncertain`. A `visible` result for a previously present history item does not independently pass the integration gate. The report retains that distinction. Responses never contain upstream signed media URLs or provider authentication data.
 
 The Flutter clients use `POST /api/queues` for all three modes. Start with `{mode: "autoplay", video_id, limit?}`, `{mode: "radio", video_id, limit?}`, or `{mode: "station", playlist_id, limit?}`. Station IDs must come from the signed-in account. Continue any mode with `{cursor}` only. All responses preserve mode, session ID and provider order; the initial page size remains fixed. Cursor retries return the same page across restarts.

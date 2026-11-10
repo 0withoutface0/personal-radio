@@ -36,6 +36,23 @@ def test_retries_are_idempotent_and_conflicts_rejected(store):
     assert store.get_occurrence(track)["listened"] == 5
 
 
+def test_event_batch_is_atomic_and_an_identical_retry_still_signals_reporting(store):
+    track = occurrence(store)
+    played_at = "2026-11-09T23:59:59+00:00"
+    events = [(str(uuid4()), track, 5, False, played_at) for _ in range(6)]
+    with pytest.raises(KeyError):
+        store.event_batch([*events, (str(uuid4()), "missing", 5, False, played_at)])
+    assert store.get_occurrence(track)["listened"] == 0
+    assert store.submissions() == []
+
+    assert store.event_batch(events) == {"accepted": 6, "inserted": 6, "reporting": True}
+    assert store.event_batch(events) == {"accepted": 6, "inserted": 0, "reporting": True}
+    assert store.get_occurrence(track)["listened"] == 30
+    assert len(store.submissions()) == 1
+    with store.connect() as db:
+        assert {row[0] for row in db.execute("SELECT played_at FROM events")} == {played_at}
+
+
 def test_concurrent_events_schedule_history_once(store):
     track = occurrence(store)
     with ThreadPoolExecutor(max_workers=8) as pool:

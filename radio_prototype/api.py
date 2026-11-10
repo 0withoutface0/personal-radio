@@ -77,6 +77,10 @@ class EventInput(BaseModel):
     played_at: AwareDatetime | None = None
 
 
+class EventBatchInput(BaseModel):
+    events: list[EventInput] = Field(min_length=1, max_length=64)
+
+
 class ListeningInput(BaseModel):
     boundaries: list[AwareDatetime] = Field(min_length=2, max_length=33)
     all_time: bool = False
@@ -524,6 +528,19 @@ def create_app(settings=None, providers=None, *, runtime_token=None, embedded=Fa
             played_at=body.played_at.astimezone(UTC).isoformat() if body.played_at else None,
         )
         return {"inserted": inserted, "occurrence": store.get_occurrence(str(body.occurrence_id))}
+
+    @app.post("/api/events/batch", dependencies=protected)
+    def event_batch(body: EventBatchInput):
+        return store.event_batch([
+            (
+                str(event.id),
+                str(event.occurrence_id),
+                event.seconds,
+                event.completed,
+                event.played_at.astimezone(UTC).isoformat() if event.played_at else None,
+            )
+            for event in body.events
+        ])
 
     @app.post("/api/checks/playback", dependencies=protected)
     def playback(body: PlaybackInput):

@@ -197,40 +197,57 @@ class Store:
         return dict(row)
 
     def event(self, event_id, occurrence_id, seconds, completed=False, *, played_at=None):
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            return self._record_event(db, event_id, occurrence_id, seconds, completed, played_at)
+
+    def event_batch(self, events):
+        with self.connect() as db:
+            # Keep the entire batch atomic, including history eligibility.
+            db.execute("BEGIN IMMEDIATE")
+            inserted = sum(self._record_event(db, *event) for event in events)
+            occurrences = sorted({event[1] for event in events})
+            placeholders = ",".join("?" for _ in occurrences)
+            reporting = db.execute(
+                "SELECT 1 FROM submissions WHERE kind='history' AND state='pending' "
+                "AND detail='Awaiting submission' "
+                f"AND occurrence_id IN ({placeholders}) LIMIT 1",
+                occurrences,
+            ).fetchone() is not None
+            return {"accepted": len(events), "inserted": inserted, "reporting": reporting}
+
+    def _record_event(self, db, event_id, occurrence_id, seconds, completed, played_at):
         if not 0 <= seconds <= 5:
             raise ValueError("Playback intervals must be between 0 and 5 seconds")
-        with self.connect() as db:
-            # Serializes event totals, deduplication, and threshold scheduling atomically.
-            db.execute("BEGIN IMMEDIATE")
-            old = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
-            if old:
-                payload = (occurrence_id, seconds, completed)
-                saved = (old["occurrence_id"], old["seconds"], bool(old["completed"]))
-                # An older server may have acknowledged the event without its timestamp.
-                changed_time = played_at and old["played_at"] and played_at != old["played_at"]
-                if saved != payload or changed_time:
-                    raise ValueError("Event ID reused with a different payload")
-                return False
-            track = db.execute("SELECT * FROM occurrences WHERE id=?", (occurrence_id,)).fetchone()
-            if not track:
-                raise KeyError("Unknown occurrence")
-            self._require_local_occurrence(db, occurrence_id)
-            db.execute(
-                "INSERT INTO events (id, occurrence_id, seconds, completed, created, played_at) "
-                "VALUES (?,?,?,?,?,?)",
-                (event_id, occurrence_id, seconds, int(completed), now(), played_at),
-            )
-            db.execute(
-                "UPDATE occurrences SET listened=listened+?, completed=MAX(completed,?) WHERE id=?",
-                (seconds, int(completed), occurrence_id),
-            )
-            total = track["listened"] + seconds
-            # Short-track completion must include the whole song, not a seek to its end.
-            eligible = total >= 30 or (
-                completed and 0 < track["duration"] < 30 and total >= track["duration"] - 0.75
-            )
-            if eligible and track["video_id"]:
-                self._schedule(db, occurrence_id, "history", None)
+        old = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+        if old:
+            payload = (occurrence_id, seconds, completed)
+            saved = (old["occurrence_id"], old["seconds"], bool(old["completed"]))
+            # An older server may have acknowledged the event without its timestamp.
+            changed_time = played_at and old["played_at"] and played_at != old["played_at"]
+            if saved != payload or changed_time:
+                raise ValueError("Event ID reused with a different payload")
+            return False
+        track = db.execute("SELECT * FROM occurrences WHERE id=?", (occurrence_id,)).fetchone()
+        if not track:
+            raise KeyError("Unknown occurrence")
+        self._require_local_occurrence(db, occurrence_id)
+        db.execute(
+            "INSERT INTO events (id, occurrence_id, seconds, completed, created, played_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (event_id, occurrence_id, seconds, int(completed), now(), played_at),
+        )
+        db.execute(
+            "UPDATE occurrences SET listened=listened+?, completed=MAX(completed,?) WHERE id=?",
+            (seconds, int(completed), occurrence_id),
+        )
+        total = track["listened"] + seconds
+        # Short-track completion must include the whole song, not a seek to its end.
+        eligible = total >= 30 or (
+            completed and 0 < track["duration"] < 30 and total >= track["duration"] - 0.75
+        )
+        if eligible and track["video_id"]:
+            self._schedule(db, occurrence_id, "history", None)
         return True
 
     def _schedule(self, db, occurrence_id, kind, value):
