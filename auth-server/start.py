@@ -1,6 +1,8 @@
 """Run an isolated, persistent browser with SSH-only interactive access."""
+import fcntl
 import os
 import secrets
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -12,6 +14,26 @@ def main():
     os.umask(0o077)
     state = Path("/state")
     state.chmod(0o700)
+    with (state / "chromium-owner.lock").open("a") as profile_lock:
+        try:
+            fcntl.flock(profile_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise SystemExit("Another radio auth service owns the browser profile.") from None
+        # Docker can recreate the container with a new hostname. Chromium
+        # otherwise treats a stale lock as another machine using the profile.
+        for name in ("SingletonCookie", "SingletonLock", "SingletonSocket"):
+            link = state / "chromium" / name
+            if link.is_symlink():
+                link.unlink(missing_ok=True)
+        signal.signal(signal.SIGTERM, _shutdown)
+        run_service(state)
+
+
+def _shutdown(_signum, _frame):
+    raise SystemExit(0)
+
+
+def run_service(state):
     token = state / "device-token.txt"
     if not token.exists():
         private_write(token, secrets.token_urlsafe(32))
@@ -51,9 +73,14 @@ def main():
             time.sleep(1)
         raise SystemExit("A YouTube auth service process exited.")
     finally:
-        for child in children:
+        for child in reversed(children):
             if child.poll() is None:
                 child.terminate()
+                try:
+                    child.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait()
 
 
 if __name__ == "__main__":
