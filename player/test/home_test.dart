@@ -141,7 +141,7 @@ void main() {
     });
   }
 
-  for (final selection in ['speed', 'playlist', 'all', 'pick0']) {
+  for (final selection in ['speed', 'all', 'pick0']) {
     testWidgets(
       '$selection uses the returned server target and persisted queue order',
       (tester) async {
@@ -184,11 +184,7 @@ void main() {
             find.text(selection == 'all' ? 'Play all' : 'Shortcut pick0'),
           );
         } else {
-          await tester.tap(
-            find.text(
-              selection == 'speed' ? 'Shortcut speed' : 'Playlist shortcut',
-            ),
-          );
+          await tester.tap(find.text('Shortcut speed'));
         }
         await tester.pumpAndSettle();
         expect(f.radio.entries.map((e) => e.song.id), [
@@ -203,6 +199,32 @@ void main() {
       },
     );
   }
+
+  testWidgets('Speed dial opens a playlist without replacing the queue', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1360, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    f.radio.home = feed();
+    f.catalog = (q) async {
+      expect(q.url.path, '/api/catalog/playlists/PL1');
+      return {
+        'id': 'PL1',
+        'title': 'Library playlist',
+        'artists': [],
+        'tracks': [song('first').source],
+      };
+    };
+    await tester.pumpWidget(RadioApp(radio: f.radio));
+    await tester.tap(find.text('Playlist shortcut'));
+    await tester.pumpAndSettle();
+    expect(find.text('Library playlist'), findsOneWidget);
+    expect(find.text('Play playlist'), findsOneWidget);
+    expect(f.radio.entries, isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets('home song long-press enqueues without starting a stream', (
     tester,

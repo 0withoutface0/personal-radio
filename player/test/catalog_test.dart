@@ -95,6 +95,59 @@ void main() {
     },
   );
 
+  testWidgets('opens library playlists and plays the whole list in order', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    f.catalog = (q) async => switch (q.url.path) {
+      '/api/catalog/playlists' => {
+        'items': [
+          {'id': 'PLmine', 'title': 'Saved playlist'},
+        ],
+      },
+      '/api/catalog/playlists/PLmine' => {
+        'id': 'PLmine',
+        'title': 'Saved playlist',
+        'artists': [],
+        'tracks': [song('one').source, song('two').source, song('one').source],
+      },
+      '/api/catalog/playlists/PLshared' => {
+        'id': 'PLshared',
+        'title': 'Shared playlist',
+        'artists': [],
+        'tracks': [],
+      },
+      _ => throw StateError('Unexpected catalog route ${q.url}'),
+    };
+    await tester.pumpWidget(RadioApp(radio: f.radio));
+    await tester.tap(find.text('Your playlists'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Saved playlist'));
+    await tester.pumpAndSettle();
+    expect(f.radio.entries, isEmpty);
+    await tester.tap(find.text('Play playlist'));
+    await tester.pumpAndSettle();
+    expect(f.radio.entries.map((e) => e.song.id), ['one', 'two', 'one']);
+    expect(f.radio.entries.map((e) => e.occurrenceId).toSet().length, 3);
+    expect(f.radio.queueTitle, 'Saved playlist');
+    await tester.tap(find.byTooltip('Back to browsing'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Back to browsing'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField),
+      'https://music.youtube.com/playlist?list=PLshared',
+    );
+    await tester.tap(find.byTooltip('Search'));
+    await tester.pumpAndSettle();
+    expect(find.text('Shared playlist'), findsOneWidget);
+    expect(f.radio.entries.length, 3);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final size in [const Size(390, 844), const Size(1360, 850)]) {
     testWidgets(
       'now playing opens its album and Ctrl+K returns to search at $size',

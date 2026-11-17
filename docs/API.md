@@ -8,10 +8,12 @@ The complete schemas are generated at authenticated `GET /api/openapi.json`. A c
 | --- | --- |
 | `GET /api/accounts` | Presence of credential files; not proof of current subscription or streaming access |
 | `GET /api/search?q=…` | Signed-in YouTube song search |
-| `GET /api/catalog/search?q=…&kind=songs/artists/albums` | Typed catalog search; returns `{kind, items}` (default songs) |
+| `GET /api/catalog/search?q=…&kind=songs/artists/albums/playlists` | Typed catalog search; returns `{kind, items}` (default songs) |
 | `GET /api/catalog/artists/{id}` | Artist details, top songs, and release previews |
 | `GET /api/catalog/artists/{id}/releases?kind=albums/singles&limit=100` | Artist releases in provider order; increase limit to load more |
 | `GET /api/catalog/albums/{id}` | Album details and ordered track list, including unavailable tracks |
+| `GET /api/catalog/playlists` | YouTube Music library playlists, including saved playlists from other creators |
+| `GET /api/catalog/playlists/{id}` | Playlist details and tracks in provider order, including unavailable tracks |
 | `GET /api/stations` | Personalized RD playlists discovered on the signed-in home page |
 | `POST /api/radio` | `{video_id}` or `{playlist_id}`, optional `limit`; returns ordered recommendations and station context |
 | `POST /api/autoplay` | `{video_id, limit?}` starts normal-play Autoplay; `{cursor}` continues a saved queue |

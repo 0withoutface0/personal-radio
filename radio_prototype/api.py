@@ -282,7 +282,7 @@ def create_app(settings=None, providers=None, *, runtime_token=None, embedded=Fa
         return providers.search(q)
 
     @app.get("/api/catalog/search", dependencies=protected)
-    def catalog_search(q: str, kind: Literal["songs", "artists", "albums"] = "songs"):
+    def catalog_search(q: str, kind: Literal["songs", "artists", "albums", "playlists"] = "songs"):
         if not 1 <= len(q.strip()) <= 300:
             raise ValueError("Invalid query length")
         return catalog.search(q.strip(), kind)
@@ -304,6 +304,14 @@ def create_app(settings=None, providers=None, *, runtime_token=None, embedded=Fa
     @app.get("/api/catalog/albums/{album_id}", dependencies=protected)
     def catalog_album(album_id: str):
         return catalog.album(album_id)
+
+    @app.get("/api/catalog/playlists", dependencies=protected)
+    def library_playlists():
+        return catalog.playlists()
+
+    @app.get("/api/catalog/playlists/{identifier}", dependencies=protected)
+    def catalog_playlist(identifier: str):
+        return catalog.playlist(identifier)
 
     @app.get("/api/stations", dependencies=protected)
     def stations():

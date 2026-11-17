@@ -37,8 +37,13 @@ class HomeView extends StatelessWidget {
         );
 
   void _open(Map<String, dynamic> item) {
-    if (item['kind'] == 'artist' || item['kind'] == 'album') {
-      onBrowse(item['kind'], item['id']);
+    final kind = item['kind'];
+    final id = item['id'] as String?;
+    if (id != null &&
+        (kind == 'artist' ||
+            kind == 'album' ||
+            (kind == 'playlist' && !id.startsWith('RD')))) {
+      onBrowse(kind, id);
     } else if (item['play_id'] != null && !radio.changingQueue) {
       radio.start(homeSelection: item);
     }

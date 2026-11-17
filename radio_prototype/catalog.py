@@ -1,5 +1,7 @@
 """Read-only YouTube Music catalog; all playback still uses matched Tidal FLAC."""
 
+import re
+
 from .providers import youtube_track
 
 
@@ -22,6 +24,28 @@ def card(item):
     }
 
 
+def playlist_id(value):
+    if not isinstance(value, str):
+        raise ValueError("Missing playlist ID")
+    value = value.removeprefix("VL")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{2,200}", value):
+        raise ValueError("Invalid playlist ID")
+    return value
+
+
+def playlist_card(item, identifier=None):
+    author = item.get("author") or []
+    if isinstance(author, dict):
+        author = [author]
+    return {
+        "id": playlist_id(identifier or item.get("playlistId") or item.get("browseId")),
+        "title": item.get("title") or "Untitled playlist",
+        "artists": author,
+        "artwork": artwork(item),
+        "owned": item.get("owned") is True,
+    }
+
+
 class Catalog:
     def __init__(self, providers):
         self.providers = providers
@@ -29,8 +53,28 @@ class Catalog:
     def search(self, query, kind):
         with self.providers.lock:
             items = self.providers.yt().search(query, filter=kind, limit=30)
+        if kind == "playlists":
+            return {"kind": kind, "items": [
+                playlist_card(item) for item in items[:30]
+                if item.get("playlistId") or item.get("browseId")
+            ]}
         convert = youtube_track if kind == "songs" else card
         return {"kind": kind, "items": [convert(item) for item in items[:30]]}
+
+    def playlists(self):
+        with self.providers.lock:
+            items = self.providers.yt().get_library_playlists(limit=None)
+        return {"items": [playlist_card(item) for item in items if item.get("playlistId")]}
+
+    def playlist(self, identifier):
+        identifier = playlist_id(identifier)
+        with self.providers.lock:
+            item = self.providers.yt().get_playlist(identifier, limit=None)
+        tracks = [
+            youtube_track({**track, "artists": track.get("artists") or []})
+            for track in item.get("tracks") or []
+        ]
+        return {**playlist_card(item, identifier), "tracks": tracks}
 
     def artist(self, artist_id):
         with self.providers.lock:

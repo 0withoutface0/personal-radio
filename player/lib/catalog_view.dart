@@ -49,18 +49,31 @@ class CatalogViewState extends State<CatalogView> {
     _pages.removeLast();
   });
 
-  Future<void> _open(String kind, String id) async {
+  Future<void> _open(String kind, String id, {bool refresh = false}) async {
+    if (!r.ready) return;
+    final section = switch (kind) {
+      'artist' => 'artists',
+      'album' => 'albums',
+      _ => 'playlists',
+    };
+    final suffix = kind == 'library' ? '' : '/${Uri.encodeComponent(id)}';
     widget.focus.unfocus();
     final request = ++_request;
     setState(() => _loading = true);
     try {
       final data = Map<String, dynamic>.from(
         await r.api!.call(
-          '/api/catalog/${kind == 'artist' ? 'artists' : 'albums'}/${Uri.encodeComponent(id)}',
+          '/api/catalog/$section$suffix',
+          timeout: kind == 'playlist' || kind == 'library'
+              ? const Duration(minutes: 2)
+              : const Duration(seconds: 45),
         ),
       );
       if (!mounted || request != _request) return;
-      setState(() => _pages.add(_BrowsePage(kind, data)));
+      setState(() {
+        if (refresh) _pages.removeLast();
+        _pages.add(_BrowsePage(kind, data));
+      });
     } catch (e) {
       if (mounted && request == _request) r.fail(e);
     } finally {
@@ -97,6 +110,23 @@ class CatalogViewState extends State<CatalogView> {
   }
 
   void _search(String query) {
+    final link = Uri.tryParse(query.trim());
+    if (link != null &&
+        (link.scheme == 'https' || link.scheme == 'http') &&
+        const {
+          'youtube.com',
+          'www.youtube.com',
+          'm.youtube.com',
+          'music.youtube.com',
+          'youtu.be',
+        }.contains(link.host)) {
+      final playlist = link.queryParameters['list'];
+      if (playlist != null &&
+          RegExp(r'^[A-Za-z0-9_-]{2,200}$').hasMatch(playlist)) {
+        _open('playlist', playlist);
+        return;
+      }
+    }
     widget.focus.unfocus();
     setState(() {
       _request++;
@@ -175,46 +205,50 @@ class CatalogViewState extends State<CatalogView> {
     onTap: item['id'] == null ? null : () => _open(kind, item['id']),
   );
 
-  Widget _song(Song song, {List<Song>? album, int index = 0, String? title}) =>
-      SongActions(
-        radio: r,
-        song: song,
-        onBrowse: (kind, id) => _open(kind, id),
-        builder: (menuButton) => ListTile(
-          contentPadding: const EdgeInsets.symmetric(vertical: 4),
-          leading: album == null
-              ? _art(song.artwork)
-              : SizedBox(width: 24, child: Text('${index + 1}')),
-          title: Text(song.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-            [
-              song.artist,
-              if (!song.available) 'Unavailable',
-              if (song.source['explicit'] == true) 'Explicit',
-              if (song.duration > Duration.zero) timeLabel(song.duration),
-            ].where((part) => part.isNotEmpty).join(' · '),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+  Widget _song(
+    Song song, {
+    List<Song>? collection,
+    int index = 0,
+    String? title,
+  }) => SongActions(
+    radio: r,
+    song: song,
+    onBrowse: (kind, id) => _open(kind, id),
+    builder: (menuButton) => ListTile(
+      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+      leading: collection == null
+          ? _art(song.artwork)
+          : SizedBox(width: 24, child: Text('${index + 1}')),
+      title: Text(song.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        [
+          song.artist,
+          if (!song.available) 'Unavailable',
+          if (song.source['explicit'] == true) 'Explicit',
+          if (song.duration > Duration.zero) timeLabel(song.duration),
+        ].where((part) => part.isNotEmpty).join(' · '),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Play song',
+            icon: const Icon(Icons.play_arrow_rounded),
+            onPressed: r.busy || !song.available
+                ? null
+                : () => r.playSongs(
+                    collection ?? [song],
+                    startIndex: collection == null ? 0 : index,
+                    title: title,
+                  ),
           ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                tooltip: 'Play song',
-                icon: const Icon(Icons.play_arrow_rounded),
-                onPressed: r.busy || !song.available
-                    ? null
-                    : () => r.playSongs(
-                        album ?? [song],
-                        startIndex: album == null ? 0 : index,
-                        title: title,
-                      ),
-              ),
-              menuButton,
-            ],
-          ),
-        ),
-      );
+          menuButton,
+        ],
+      ),
+    ),
+  );
 
   Widget _searchView() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -237,7 +271,7 @@ class CatalogViewState extends State<CatalogView> {
         textInputAction: TextInputAction.search,
         onSubmitted: _search,
         decoration: InputDecoration(
-          hintText: 'Search songs, artists or albums',
+          hintText: 'Search music or paste a playlist link',
           prefixIcon: const Icon(Icons.search),
           suffixIcon: IconButton(
             tooltip: 'Search',
@@ -260,7 +294,7 @@ class CatalogViewState extends State<CatalogView> {
                 _search('');
               },
             ),
-          for (final kind in ['songs', 'artists', 'albums'])
+          for (final kind in ['songs', 'artists', 'albums', 'playlists'])
             ChoiceChip(
               label: Text(kind[0].toUpperCase() + kind.substring(1)),
               selected: _kind == kind,
@@ -269,6 +303,11 @@ class CatalogViewState extends State<CatalogView> {
                 _search(widget.search.text);
               },
             ),
+          ActionChip(
+            avatar: const Icon(Icons.library_music_outlined, size: 18),
+            label: const Text('Your playlists'),
+            onPressed: !r.ready || _loading ? null : () => _open('library', ''),
+          ),
         ],
       ),
       const SizedBox(height: 8),
@@ -303,19 +342,63 @@ class CatalogViewState extends State<CatalogView> {
                 itemCount: r.catalogResults.length,
                 itemBuilder: (_, i) => _card(
                   r.catalogResults[i],
-                  _kind == 'artists' ? 'artist' : 'album',
+                  _kind.substring(0, _kind.length - 1),
                 ),
               ),
       ),
     ],
   );
 
+  Widget _libraryView(_BrowsePage page) {
+    final items = page.data['items'] as List? ?? [];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            IconButton(
+              tooltip: 'Back to browsing',
+              onPressed: _back,
+              icon: const Icon(Icons.arrow_back),
+            ),
+            Expanded(
+              child: Text(
+                'Your playlists',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Refresh playlists',
+              onPressed: _loading
+                  ? null
+                  : () => _open('library', '', refresh: true),
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        if (_loading) const LinearProgressIndicator(minHeight: 2),
+        Expanded(
+          child: items.isEmpty
+              ? const Center(
+                  child: Text('Your YouTube Music library has no playlists.'),
+                )
+              : ListView.builder(
+                  itemCount: items.length,
+                  itemBuilder: (_, i) =>
+                      _card(Map<String, dynamic>.from(items[i]), 'playlist'),
+                ),
+        ),
+      ],
+    );
+  }
+
   Widget _browseView(_BrowsePage page) {
+    if (page.kind == 'library') return _libraryView(page);
     final data = page.data;
-    final songs =
-        (data[page.kind == 'album' ? 'tracks' : 'songs'] as List? ?? [])
-            .map((item) => Song(Map<String, dynamic>.from(item)))
-            .toList();
+    final isCollection = page.kind != 'artist';
+    final songs = (data[isCollection ? 'tracks' : 'songs'] as List? ?? [])
+        .map((item) => Song(Map<String, dynamic>.from(item)))
+        .toList();
     final releaseData = page.releases[page.section];
     final releases =
         releaseData?['items'] ?? data['releases']?[page.section] ?? [];
@@ -331,7 +414,11 @@ class CatalogViewState extends State<CatalogView> {
             ),
             Expanded(
               child: Text(
-                page.kind == 'artist' ? 'Artist' : 'Album',
+                page.kind == 'artist'
+                    ? 'Artist'
+                    : page.kind == 'album'
+                    ? 'Album'
+                    : 'Playlist',
                 style: TextStyle(color: colors.onSurfaceVariant),
               ),
             ),
@@ -339,11 +426,7 @@ class CatalogViewState extends State<CatalogView> {
               tooltip: 'Refresh page',
               onPressed: _loading
                   ? null
-                  : () {
-                      final id = data['id'];
-                      _back();
-                      _open(page.kind, id);
-                    },
+                  : () => _open(page.kind, data['id'], refresh: true),
               icon: const Icon(Icons.refresh),
             ),
           ],
@@ -367,6 +450,14 @@ class CatalogViewState extends State<CatalogView> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
+                  if (page.kind == 'playlist' &&
+                      (data['artists'] as List).isNotEmpty)
+                    Text(
+                      (data['artists'] as List)
+                          .map((author) => author['name'])
+                          .join(', '),
+                      style: TextStyle(color: colors.onSurfaceVariant),
+                    ),
                   if (data['year'] != null)
                     Text(
                       data['year'].toString(),
@@ -378,7 +469,7 @@ class CatalogViewState extends State<CatalogView> {
           ],
         ),
         const SizedBox(height: 12),
-        if (page.kind == 'album')
+        if (isCollection)
           Wrap(
             spacing: 8,
             runSpacing: 4,
@@ -388,24 +479,24 @@ class CatalogViewState extends State<CatalogView> {
                     ? null
                     : () => r.playSongs(songs, title: data['title']),
                 icon: const Icon(Icons.play_arrow),
-                label: const Text('Play album'),
+                label: Text('Play ${page.kind}'),
               ),
               OutlinedButton.icon(
                 onPressed: r.changingQueue || !songs.any((s) => s.available)
                     ? null
                     : () => _enqueue(songs, next: true),
                 icon: const Icon(Icons.playlist_play),
-                label: const Text('Play album next'),
+                label: Text('Play ${page.kind} next'),
               ),
               OutlinedButton.icon(
                 onPressed: r.changingQueue || !songs.any((s) => s.available)
                     ? null
                     : () => _enqueue(songs),
                 icon: const Icon(Icons.playlist_add),
-                label: const Text('Add album to queue'),
+                label: Text('Add ${page.kind} to queue'),
               ),
               for (final artist in data['artists'] as List? ?? [])
-                if (artist['id'] != null)
+                if (page.kind == 'album' && artist['id'] != null)
                   TextButton(
                     onPressed: () => _open('artist', artist['id']),
                     child: Text(artist['name'] ?? 'Artist'),
@@ -432,45 +523,45 @@ class CatalogViewState extends State<CatalogView> {
         const SizedBox(height: 8),
         if (_loading) const LinearProgressIndicator(minHeight: 2),
         Expanded(
-          child: ListView(
-            children: [
-              if (page.kind == 'album' || page.section == 'songs') ...[
-                if (songs.isEmpty)
-                  const ListTile(title: Text('No songs available.')),
-                for (var i = 0; i < songs.length; i++)
-                  _song(
-                    songs[i],
-                    album: page.kind == 'album' ? songs : null,
-                    index: i,
-                    title: page.kind == 'album' ? data['title'] : null,
-                  ),
-              ] else ...[
-                if (releases.isEmpty && !_loading)
-                  const ListTile(title: Text('No releases found.')),
-                for (final item in releases)
-                  _card(Map<String, dynamic>.from(item), 'album'),
-                if (releaseData == null || releaseData['has_more'] == true)
-                  TextButton(
-                    onPressed: _loading
-                        ? null
-                        : () => _releases(
-                            page,
-                            page.section,
-                            more: releaseData != null,
-                          ),
-                    child: Text(
-                      releaseData == null
-                          ? 'Load releases'
-                          : 'Load more releases',
-                    ),
-                  ),
-                if (releaseData?['limited'] == true)
-                  const ListTile(
-                    subtitle: Text('Showing the first 1000 releases.'),
-                  ),
-              ],
-            ],
-          ),
+          child: isCollection || page.section == 'songs'
+              ? songs.isEmpty
+                    ? const ListTile(title: Text('No songs available.'))
+                    : ListView.builder(
+                        itemCount: songs.length,
+                        itemBuilder: (_, i) => _song(
+                          songs[i],
+                          collection: isCollection ? songs : null,
+                          index: i,
+                          title: isCollection ? data['title'] : null,
+                        ),
+                      )
+              : ListView(
+                  children: [
+                    if (releases.isEmpty && !_loading)
+                      const ListTile(title: Text('No releases found.')),
+                    for (final item in releases)
+                      _card(Map<String, dynamic>.from(item), 'album'),
+                    if (releaseData == null || releaseData['has_more'] == true)
+                      TextButton(
+                        onPressed: _loading
+                            ? null
+                            : () => _releases(
+                                page,
+                                page.section,
+                                more: releaseData != null,
+                              ),
+                        child: Text(
+                          releaseData == null
+                              ? 'Load releases'
+                              : 'Load more releases',
+                        ),
+                      ),
+                    if (releaseData?['limited'] == true)
+                      const ListTile(
+                        subtitle: Text('Showing the first 1000 releases.'),
+                      ),
+                  ],
+                ),
         ),
       ],
     );

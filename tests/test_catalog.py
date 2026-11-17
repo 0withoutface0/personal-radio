@@ -28,6 +28,7 @@ def catalog_api(tmp_path):
             ],
             "artists": [{"browseId": "UC1", "artist": "Artist", "thumbnails": [{"url": "art"}]}],
             "albums": [{"browseId": "MPRE1", "title": "Record", "year": "2026"}],
+            "playlists": [{"browseId": "VLPLpublic", "title": "Public playlist"}],
         }[filter]
 
     def artist(artist_id):
@@ -48,7 +49,25 @@ def catalog_api(tmp_path):
         calls.append(("albums", browse_id, params, limit))
         return [{"browseId": f"MPRE{x}", "title": f"Record {x}"} for x in range(limit)]
 
+    def playlist(identifier, *, limit):
+        calls.append(("playlist", identifier, limit))
+        return {
+            "title": "My playlist" if identifier == "PLmine" else "Public playlist",
+            "owned": identifier == "PLmine",
+            "author": {"name": "Creator", "id": "UCcreator"},
+            "tracks": [
+                {"videoId": "first", "title": "First"},
+                {"videoId": None, "title": "Unavailable", "artists": None},
+                {"videoId": "first", "title": "First"},
+            ],
+        }
+
     providers.youtube = SimpleNamespace(
+        get_playlist=playlist,
+        get_library_playlists=lambda *, limit: [
+            {"playlistId": "PLmine", "title": "My playlist", "owned": True},
+            {"playlistId": "PLpublic", "title": "Public playlist", "owned": False},
+        ],
         search=search,
         get_artist=artist,
         get_artist_albums=albums,
@@ -151,3 +170,22 @@ def test_invalid_catalog_queries_are_rejected(catalog_api, path):
     client, _, auth, calls = catalog_api
     assert client.get(path, headers=auth).status_code == 422
     assert calls == []
+
+
+def test_playlists_include_owned_and_saved_and_preserve_track_occurrences(catalog_api):
+    client, store, auth, calls = catalog_api
+    library = client.get("/api/catalog/playlists", headers=auth).json()["items"]
+    assert [(item["id"], item["owned"]) for item in library] == [
+        ("PLmine", True), ("PLpublic", False),
+    ]
+    search = client.get("/api/catalog/search?q=Public&kind=playlists", headers=auth).json()
+    assert search["items"][0]["id"] == "PLpublic"
+    response = client.get("/api/catalog/playlists/VLPLpublic", headers=auth)
+    assert response.status_code == 200
+    playlist = response.json()
+    assert playlist["owned"] is False
+    assert playlist["artists"] == [{"id": "UCcreator", "name": "Creator"}]
+    assert [track["video_id"] for track in playlist["tracks"]] == ["first", None, "first"]
+    assert playlist["tracks"][1]["available"] is False
+    assert ("playlist", "PLpublic", None) in calls
+    assert store.report()["totals"]["occurrences"] == 0
