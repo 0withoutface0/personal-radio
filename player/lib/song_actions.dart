@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'api.dart';
 import 'models.dart';
 import 'radio_controller.dart';
 
@@ -49,6 +50,11 @@ class SongActions extends StatelessWidget {
       enabled: radio.ready && !radio.changingQueue && song!.available,
       child: const Text('Start radio / mix'),
     ),
+    PopupMenuItem(
+      value: 'playlist',
+      enabled: radio.ready && song!.available,
+      child: const Text('Add to playlist'),
+    ),
     if (song!.albumId != null)
       const PopupMenuItem(value: 'album', child: Text('View album')),
     for (final artist in song!.artistRefs)
@@ -63,6 +69,8 @@ class SongActions extends StatelessWidget {
     final selected = song!;
     if (value == 'remove') {
       await radio.removeOccurrence(queueOccurrenceId!);
+    } else if (value == 'playlist') {
+      await _addToPlaylist(context, selected);
     } else if (value == 'album') {
       onBrowse('album', selected.albumId!);
     } else if (value.startsWith('artist:')) {
@@ -81,6 +89,85 @@ class SongActions extends StatelessWidget {
           duration: const Duration(seconds: 2),
         ),
       );
+    }
+  }
+
+  Future<void> _addToPlaylist(BuildContext context, Song song) async {
+    final api = radio.api;
+    if (api == null) return;
+    final playlists = api.call(
+      '/api/catalog/playlists',
+      timeout: const Duration(minutes: 2),
+    );
+    final target = await showDialog<({String id, String title})>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add to playlist'),
+        content: SizedBox(
+          width: 360,
+          height: (MediaQuery.sizeOf(context).height * .45)
+              .clamp(100, 320)
+              .toDouble(),
+          child: FutureBuilder<dynamic>(
+            future: playlists,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                final error = snapshot.error;
+                return Center(
+                  child: Text(
+                    error is ApiFailure
+                        ? error.message
+                        : 'Could not load your playlists. Try again.',
+                  ),
+                );
+              }
+              final owned = (snapshot.data['items'] as List)
+                  .where((item) => item['owned'] == true)
+                  .toList();
+              if (owned.isEmpty) {
+                return const Center(
+                  child: Text('You have no playlists you can add to.'),
+                );
+              }
+              return ListView.builder(
+                itemCount: owned.length,
+                itemBuilder: (context, index) {
+                  final playlist = owned[index];
+                  return ListTile(
+                    leading: const Icon(Icons.queue_music),
+                    title: Text(playlist['title']),
+                    onTap: () => Navigator.pop(context, (
+                      id: playlist['id'] as String,
+                      title: playlist['title'] as String,
+                    )),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (target == null || !context.mounted || api != radio.api) return;
+    try {
+      await api.call(
+        '/api/catalog/playlists/${Uri.encodeComponent(target.id)}/tracks',
+        body: {'video_id': song.id},
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Saved to ${target.title}')));
+    } catch (error) {
+      if (context.mounted) radio.fail(error);
     }
   }
 

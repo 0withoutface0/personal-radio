@@ -134,6 +134,10 @@ flutter test integration_test/network_fixture_test.dart -d windows
 
 Discover opens on **For you** with your signed-in YouTube Music **Speed dial** and **Quick picks**. Speed dial uses a swipeable three-by-three grid with previous/next buttons for mouse and keyboard users; artist and album shortcuts open their catalog pages, and playable shortcuts use YouTube's returned play action. Quick picks offers individual song radio and the provider's **Play all** action. Song long-press/right-click menus still offer Play next, Add to queue and artist/album links. Ratings remain in now playing. Search and its **For you** button let you switch between catalog results and home recommendations.
 
+Open **Your playlists** in Discover to browse the playlists in your YouTube Music library. Select the **Playlists** search filter for public playlists, or paste a YouTube or YouTube Music playlist link into the search box. Playlist shortcuts in Speed dial open the track list. Play the list in order, start from a particular track, or add the list to the queue. Playback uses matched Tidal audio.
+
+Open a song's options and choose **Add to playlist** to save it to a playlist you own on YouTube Music. The app confirms the save and keeps your playback queue intact.
+
 Refresh Home with the refresh button or pull down. Refreshing keeps the current queue and pending listening events intact. The server must be updated for these shelves (API version 0.4.0). When YouTube signs the server out or omits a shelf, the app explains that instead of substituting generic recommendations. A home play selection can expire after a server restart; refresh Home and select it again. Normal queues, playback events and listening totals stay durable.
 
 The account-free native preloading check uses generated PCM and 24-bit/96kHz FLAC HLS fixtures on a loopback server. It verifies authenticated next-audio requests before EOF, native handoff, occurrence order and no duplicate stream resolution:

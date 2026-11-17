@@ -1,8 +1,11 @@
-"""Read-only YouTube Music catalog; all playback still uses matched Tidal FLAC."""
+"""YouTube Music catalog and playlist editing. Playback uses matched Tidal audio."""
 
 import re
 
-from .providers import youtube_track
+from requests import RequestException
+from ytmusicapi.exceptions import YTMusicError
+
+from .providers import ProviderUnavailable, youtube_track
 
 
 def artwork(item):
@@ -46,6 +49,10 @@ def playlist_card(item, identifier=None):
     }
 
 
+class PlaylistNotOwned(Exception):
+    pass
+
+
 class Catalog:
     def __init__(self, providers):
         self.providers = providers
@@ -75,6 +82,29 @@ class Catalog:
             for track in item.get("tracks") or []
         ]
         return {**playlist_card(item, identifier), "tracks": tracks}
+
+    def add_playlist_song(self, identifier, video_id):
+        identifier = playlist_id(identifier)
+        if identifier in {"LM", "LL", "SE"} or identifier.startswith(("RD", "OLA")):
+            raise PlaylistNotOwned
+        with self.providers.lock:
+            yt = self.providers.yt()
+            if yt.get_playlist(identifier, limit=1).get("owned") is not True:
+                raise PlaylistNotOwned
+            try:
+                # This option in ytmusicapi 1.12.3 sends DEDUPE_OPTION_SKIP.
+                # Use the active client in case the preceding read renewed it.
+                result = self.providers.yt().add_playlist_items(
+                    identifier, videoIds=[video_id], duplicates=True,
+                )
+            except (RequestException, YTMusicError):
+                result = None
+        status = result.get("status") if isinstance(result, dict) else result
+        if status != "STATUS_SUCCEEDED":
+            raise ProviderUnavailable(
+                "YouTube Music could not confirm the change. Check the playlist before retrying."
+            )
+        return {"saved": True}
 
     def artist(self, artist_id):
         with self.providers.lock:

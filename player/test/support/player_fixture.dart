@@ -159,7 +159,11 @@ class PlayerFixture {
         } else {
           throw StateError('Unexpected request: $path');
         }
-        return http.Response(jsonEncode(result), 200);
+        return http.Response(
+          jsonEncode(result),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
       }),
     );
   }

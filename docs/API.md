@@ -14,6 +14,7 @@ The complete schemas are generated at authenticated `GET /api/openapi.json`. A c
 | `GET /api/catalog/albums/{id}` | Album details and ordered track list, including unavailable tracks |
 | `GET /api/catalog/playlists` | YouTube Music library playlists, including saved playlists from other creators |
 | `GET /api/catalog/playlists/{id}` | Playlist details and tracks in provider order, including unavailable tracks |
+| `POST /api/catalog/playlists/{id}/tracks` | Add `{video_id}` to a YouTube Music playlist owned by the signed-in account |
 | `GET /api/stations` | Personalized RD playlists discovered on the signed-in home page |
 | `POST /api/radio` | `{video_id}` or `{playlist_id}`, optional `limit`; returns ordered recommendations and station context |
 | `POST /api/autoplay` | `{video_id, limit?}` starts normal-play Autoplay; `{cursor}` continues a saved queue |

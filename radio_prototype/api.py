@@ -13,7 +13,7 @@ from pydantic import AwareDatetime, BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .autoplay import Autoplay
-from .catalog import Catalog
+from .catalog import Catalog, PlaylistNotOwned
 from .config import Settings
 from .home import HomeFeed
 from .listening import listening_stats
@@ -43,6 +43,10 @@ class AutoplayInput(BaseModel):
 class QueueInput(AutoplayInput):
     mode: Literal["autoplay", "radio", "station"] = "autoplay"
     playlist_id: str | None = Field(default=None, max_length=200)
+
+
+class PlaylistSongInput(BaseModel):
+    video_id: str = Field(pattern=r"^[A-Za-z0-9_-]{11}$")
 
 
 class HomePlayInput(BaseModel):
@@ -312,6 +316,13 @@ def create_app(settings=None, providers=None, *, runtime_token=None, embedded=Fa
     @app.get("/api/catalog/playlists/{identifier}", dependencies=protected)
     def catalog_playlist(identifier: str):
         return catalog.playlist(identifier)
+
+    @app.post("/api/catalog/playlists/{identifier}/tracks", dependencies=protected)
+    def add_playlist_song(identifier: str, body: PlaylistSongInput):
+        try:
+            return catalog.add_playlist_song(identifier, body.video_id)
+        except PlaylistNotOwned:
+            raise HTTPException(403, "You can add songs only to playlists you own.") from None
 
     @app.get("/api/stations", dependencies=protected)
     def stations():

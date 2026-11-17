@@ -62,7 +62,14 @@ def catalog_api(tmp_path):
             ],
         }
 
+    def add_items(identifier, *, videoIds, duplicates):
+        calls.append(("add", identifier, videoIds, duplicates))
+        if videoIds == ["ambiguous01"]:
+            return {"status": "UNKNOWN"}
+        return {"status": "STATUS_SUCCEEDED"}
+
     providers.youtube = SimpleNamespace(
+        add_playlist_items=add_items,
         get_playlist=playlist,
         get_library_playlists=lambda *, limit: [
             {"playlistId": "PLmine", "title": "My playlist", "owned": True},
@@ -189,3 +196,31 @@ def test_playlists_include_owned_and_saved_and_preserve_track_occurrences(catalo
     assert playlist["tracks"][1]["available"] is False
     assert ("playlist", "PLpublic", None) in calls
     assert store.report()["totals"]["occurrences"] == 0
+
+
+def test_playlist_add_checks_current_ownership_and_never_retries_an_uncertain_write(catalog_api):
+    client, store, auth, calls = catalog_api
+    mine = "/api/catalog/playlists/PLmine/tracks"
+    body = {"video_id": "fixture0001"}
+    assert client.post(mine, json=body).status_code == 401
+    assert client.post(mine, json={"video_id": "bad!"}, headers=auth).status_code == 422
+    for identifier in ("PLpublic", "LM", "RDsample"):
+        path = f"/api/catalog/playlists/{identifier}/tracks"
+        assert client.post(path, json=body, headers=auth).status_code == 403
+    assert not any(call[0] == "add" for call in calls)
+
+    response = client.post(mine, json=body, headers=auth)
+    assert response.status_code == 200
+    assert response.json() == {"saved": True}
+    assert calls[-2:] == [
+        ("playlist", "PLmine", 1), ("add", "PLmine", ["fixture0001"], True),
+    ]
+
+    uncertain = client.post(mine, json={"video_id": "ambiguous01"}, headers=auth)
+    assert uncertain.status_code == 503
+    assert "Check the playlist" in uncertain.json()["detail"]
+    assert [call for call in calls if call[0] == "add"] == [
+        ("add", "PLmine", ["fixture0001"], True),
+        ("add", "PLmine", ["ambiguous01"], True),
+    ]
+    assert store.report()["submissions"] == []

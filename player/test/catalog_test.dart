@@ -148,6 +148,53 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('song menu adds to owned playlists without touching playback', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    f.catalog = (q) async {
+      switch (q.url.path) {
+        case '/api/catalog/search':
+          return {
+            'items': [song('fixture0001').source],
+          };
+        case '/api/catalog/playlists':
+          expect(q.method, 'GET');
+          return {
+            'items': [
+              {'id': 'PLmine', 'title': 'My mix', 'owned': true},
+              {'id': 'PLshared', 'title': 'Someone else’s mix', 'owned': false},
+            ],
+          };
+        case '/api/catalog/playlists/PLmine/tracks':
+          expect(q.method, 'POST');
+          expect(jsonDecode(q.body), {'video_id': 'fixture0001'});
+          return {'saved': true};
+        default:
+          throw StateError('Unexpected catalog route ${q.url}');
+      }
+    };
+    await tester.pumpWidget(RadioApp(radio: f.radio));
+    await tester.enterText(find.byType(TextField), 'fixture');
+    await tester.tap(find.byTooltip('Search'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Song actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add to playlist'));
+    await tester.pumpAndSettle();
+    expect(find.text('Someone else’s mix'), findsNothing);
+    await tester.tap(find.text('My mix'));
+    await tester.pumpAndSettle();
+    expect(find.text('Saved to My mix'), findsOneWidget);
+    expect(f.requests.where((r) => r.method == 'POST').length, 1);
+    expect(f.radio.entries, isEmpty);
+    expect(f.radio.outbox, isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final size in [const Size(390, 844), const Size(1360, 850)]) {
     testWidgets(
       'now playing opens its album and Ctrl+K returns to search at $size',
