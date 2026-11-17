@@ -105,6 +105,33 @@ class _LocalSettingsState extends State<_LocalSettings>
     if (mounted) setState(() => status = 'YouTube Music connected.');
   }
 
+  Future<void> _configureYoutubeRenewal() async {
+    final saved = host.radio.localAccounts?['youtube']?['renewal_server'];
+    final config = await showDialog<({String origin, String token})>(
+      context: context,
+      builder: (_) => _YoutubeRenewalDialog(origin: saved as String? ?? ''),
+    );
+    if (config == null || !mounted) return;
+    await run(() async {
+      await api.call(
+        '/api/local/accounts/youtube/renewal',
+        method: 'PUT',
+        body: {'origin': config.origin, 'token': config.token},
+        timeout: const Duration(seconds: 100),
+      );
+      await host.radio.refreshLocalAccounts();
+      if (mounted) {
+        setState(() => status = 'Automatic YouTube renewal connected.');
+      }
+    });
+  }
+
+  Future<void> _stopYoutubeRenewal() async {
+    await api.call('/api/local/accounts/youtube/renewal', method: 'DELETE');
+    await host.radio.refreshLocalAccounts();
+    if (mounted) setState(() => status = 'Automatic YouTube renewal is off.');
+  }
+
   Future<void> _recoverYoutubeActivity() async {
     final radio = host.radio;
     await radio.sync();
@@ -374,6 +401,9 @@ class _LocalSettingsState extends State<_LocalSettings>
                 ),
               if (radio.localAccounts?['youtube']?['reporting'] == true)
                 const Text('Channel verified for activity reporting.'),
+              if (radio.localAccounts?['youtube']?['renewal_server']
+                  case final String server)
+                Text('Automatic renewal via ${Uri.parse(server).host}'),
               Wrap(
                 spacing: 6,
                 children: [
@@ -383,6 +413,18 @@ class _LocalSettingsState extends State<_LocalSettings>
                         : null,
                     child: const Text('Connect with Firefox'),
                   ),
+                  TextButton(
+                    onPressed: available ? _configureYoutubeRenewal : null,
+                    child: const Text('Set up server renewal'),
+                  ),
+                  if (radio.localAccounts?['youtube']?['renewal_server'] !=
+                      null)
+                    TextButton(
+                      onPressed: available
+                          ? () => run(_stopYoutubeRenewal)
+                          : null,
+                      child: const Text('Turn off server renewal'),
+                    ),
                   TextButton(
                     onPressed: available ? _pasteYoutube : null,
                     child: const Text('Paste request headers'),
@@ -538,6 +580,75 @@ class _LocalSettingsState extends State<_LocalSettings>
         ],
       );
     },
+  );
+}
+
+class _YoutubeRenewalDialog extends StatefulWidget {
+  const _YoutubeRenewalDialog({required this.origin});
+  final String origin;
+
+  @override
+  State<_YoutubeRenewalDialog> createState() => _YoutubeRenewalDialogState();
+}
+
+class _YoutubeRenewalDialogState extends State<_YoutubeRenewalDialog> {
+  late final origin = TextEditingController(text: widget.origin);
+  final token = TextEditingController();
+
+  @override
+  void dispose() {
+    origin.dispose();
+    token.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('YouTube Music server renewal'),
+    scrollable: true,
+    content: SizedBox(
+      width: 400,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Sign in to YouTube Music in the OMV browser, then enter its '
+            'private Tailscale address and renewal token.',
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: origin,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            decoration: const InputDecoration(
+              labelText: 'Tailscale HTTPS address',
+              hintText: 'https://omv.example.ts.net',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: token,
+            obscureText: true,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: const InputDecoration(labelText: 'Renewal token'),
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(context, (
+          origin: origin.text.trim(),
+          token: token.text.trim(),
+        )),
+        child: const Text('Connect'),
+      ),
+    ],
   );
 }
 

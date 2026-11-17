@@ -26,6 +26,11 @@ class SetupAccounts(BaseModel):
     tidal: SetupTidal
 
 
+class YouTubeRenewal(BaseModel):
+    origin: str = Field(min_length=1, max_length=300)
+    token: str = Field(min_length=1, max_length=128)
+
+
 class ConfirmYouTubeRecovery(BaseModel):
     confirmation: str = Field(pattern=r"^[0-9a-f]{64}$")
 
@@ -44,6 +49,16 @@ def account_routes(providers, store, authorize):
     @router.post("/api/local/accounts/youtube/check", dependencies=protected)
     def check_youtube():
         return providers.check_youtube()
+
+    @router.put("/api/local/accounts/youtube/renewal", dependencies=protected)
+    def configure_renewal(body: YouTubeRenewal):
+        providers.connect_youtube_server(body.origin, body.token)
+        return providers.status()["youtube"]
+
+    @router.delete("/api/local/accounts/youtube/renewal", dependencies=protected)
+    def stop_renewal():
+        providers.stop_youtube_renewal()
+        return providers.status()["youtube"]
 
     def verified_channel():
         channel = providers.identity("youtube")

@@ -15,6 +15,10 @@ Once Personal Radio is working on Windows, open **Settings → Set up Android �
 
 With **On this device** on Windows, this connects both music accounts on the phone. Select **Include Wi-Fi listening history sync** before showing the QR to pair history at the same time. The phone can then play directly from the providers. With a server-connected Windows app, the same setup connects Android to that server, so the saved server address must be reachable from the phone.
 
+## Automatic YouTube Music renewal
+
+If you run a private OMV server, choose **Set up server renewal** under YouTube Music in **Settings → On this device**. Sign in from the dedicated browser on OMV first. See the [OMV server setup guide](../auth-server/README.md).
+
 ## Connect accounts
 
 Open **Settings → On this device**.

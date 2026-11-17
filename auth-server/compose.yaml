@@ -1,0 +1,20 @@
+services:
+  youtube-auth:
+    build:
+      context: ..
+      dockerfile: auth-server/Dockerfile
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8770:8770"
+      - "127.0.0.1:8771:8771"
+    volumes:
+      - youtube-browser:/state
+    shm_size: 256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  youtube-browser:

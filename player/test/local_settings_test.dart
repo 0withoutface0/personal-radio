@@ -51,7 +51,10 @@ void main() {
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
     Future<void> openGuide() async {
-      await tester.tap(find.text('Paste request headers'));
+      final pasteHeaders = find.text('Paste request headers');
+      await tester.ensureVisible(pasteHeaders);
+      await tester.pumpAndSettle();
+      await tester.tap(pasteHeaders);
       await tester.pumpAndSettle();
     }
 
