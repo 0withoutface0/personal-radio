@@ -60,11 +60,17 @@ def run_service(state):
         start("websockify", "--web", "/usr/share/novnc", "0.0.0.0:8771", "127.0.0.1:5900")
         # Container isolation replaces Chromium's nested sandbox here. The
         # non-root browser only sees its dedicated volume and has no host socket.
+        profile = state / "chromium"
+        # Ask Chromium to restore its browser session on restart. Open the
+        # initial Music tab once so subsequent launches can restore that tab.
+        initial_page = () if (profile / "Default" / "Preferences").is_file() else (
+            "https://music.youtube.com/",
+        )
         start("chromium", "--no-sandbox", "--disable-dev-shm-usage",
               "--no-first-run", "--no-default-browser-check", "--disable-sync",
-              "--password-store=basic", "--user-data-dir=/state/chromium",
+              "--restore-last-session", "--password-store=basic", f"--user-data-dir={profile}",
               "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=9222",
-              "https://music.youtube.com/")
+              *initial_page)
         children.append(subprocess.Popen([
             "python", "-m", "uvicorn", "app:create_app", "--factory",
             "--host", "0.0.0.0", "--port", "8770", "--no-proxy-headers", "--no-access-log",

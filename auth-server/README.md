@@ -29,7 +29,7 @@ Open [the forwarded console](http://127.0.0.1:18771/vnc.html?autoconnect=1&resiz
 docker compose -p personal-radio-auth -f auth-server/compose.yaml exec -T youtube-auth cat /state/vnc.password
 ```
 
-Sign into YouTube Music in the dedicated Chromium window. Close the console and tunnel after you verify the correct channel is selected. If Google asks for a security check, complete it directly in that browser. If Google invalidates the entire browser session, sign in there again.
+Sign into YouTube Music in the dedicated Chromium window. Close the console and tunnel after you verify the correct channel is selected. If Google asks for a security check, complete it directly in that browser. Sign in there again if Google invalidates the browser session or if Chromium loses the sign-in after a container restart.
 
 ## Connect the phone
 

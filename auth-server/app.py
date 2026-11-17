@@ -21,11 +21,21 @@ async def capture():
     async with async_playwright() as playwright:
         browser = await playwright.chromium.connect_over_cdp(CDP, timeout=5000)
         context = browser.contexts[0]
-        page = await context.new_page()
+        # A fresh tab can receive a signed-out page even while the browser's
+        # existing YouTube Music tab has a valid signed-in session.
+        page = next((tab for tab in reversed(context.pages) if tab.url.startswith(MUSIC)), None)
+        temporary = page is None
+        if temporary:
+            page = await context.new_page()
         try:
-            await page.goto(MUSIC, wait_until="domcontentloaded", timeout=10000)
+            if temporary:
+                await page.goto(MUSIC, wait_until="domcontentloaded", timeout=10000)
             if not page.url.startswith(MUSIC):
                 raise ValueError("YouTube Music requires sign-in or consent")
+            await page.wait_for_function(
+                '() => typeof globalThis.ytcfg?.get?.("LOGGED_IN") === "boolean"',
+                timeout=6000,
+            )
             config = await page.evaluate("""() => ({
                 signedIn: globalThis.ytcfg?.get?.("LOGGED_IN"),
                 account: globalThis.ytcfg?.get?.("SESSION_INDEX"),
@@ -52,7 +62,8 @@ async def capture():
                 raise ValueError("No verified channel")
             return record
         finally:
-            await page.close()
+            if temporary:
+                await page.close()
 
 
 def create_app(*, capture_session=capture, token_path=Path("/state/device-token.txt")):
